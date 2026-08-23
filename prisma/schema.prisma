@@ -1,0 +1,84 @@
+// Gloss — schema of record.
+//
+// Prisma owns the TABLES here and generates the migrations that create them.
+// It does not own everything: RLS policies, the lower(term) unique index, the
+// bump_translation_hits function, the FKs into auth.users, and the private
+// storage bucket cannot be expressed in this language. Those live as raw SQL
+// appended to the migration in prisma/migrations, which is why that file is
+// hand-maintained rather than purely generated.
+//
+// Nothing here runs in the browser. The app reads and writes through
+// supabase-js so that RLS (`user_id = auth.uid()`) is enforced on every query;
+// Prisma connects as the database owner and would bypass it entirely.
+
+// No `generator` block: nothing imports Prisma Client, so there is no client
+// to generate. Connection URLs live in prisma.config.ts — Prisma 7 no longer
+// accepts `url` or `directUrl` here.
+datasource db {
+  provider = "postgresql"
+}
+
+model Book {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// FK to auth.users, added as raw SQL — Prisma must not manage the auth schema.
+  userId      String   @map("user_id") @db.Uuid
+  title       String
+  sourceLang  String?  @map("source_lang")
+  /// Path in the private `books` bucket: {user_id}/{book_id}/{filename}
+  storagePath String   @map("storage_path")
+  /// string[] — the extracted text, one entry per page
+  pages       Json
+  pageCount   Int      @map("page_count")
+  /// Resume position.
+  lastPage    Int      @default(0) @map("last_page")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  words Word[]
+
+  @@index([userId, createdAt(sort: Desc)], map: "books_user")
+  @@map("books")
+}
+
+model Word {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String  @map("user_id") @db.Uuid
+  bookId      String? @map("book_id") @db.Uuid
+  term        String
+  /// Dictionary form. Spec §7 — unused in v1.
+  lemma       String?
+  translation String
+  /// The sentence the word was found in.
+  context     String?
+  page        Int?
+  kind        String  @default("word")
+
+  // SM-2 review state (v2). The queue is ready before the UI is.
+  ease     Float    @default(2.5) @db.Real
+  interval Int      @default(0)
+  reps     Int      @default(0)
+  dueAt    DateTime @default(now()) @map("due_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  book Book? @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  // The real uniqueness rule is (user_id, lower(term), book_id) — Prisma
+  // cannot express the lower() call, so that index is created in raw SQL.
+  @@index([userId, dueAt], map: "words_due")
+  @@map("words")
+}
+
+/// The shared translation cache. Do not skip this — it is what keeps the bill
+/// at zero. No user data in it; only the Edge Function writes.
+model Translation {
+  /// sha256(from|to|mode|lower(text))
+  hash        String   @id
+  sourceLang  String?  @map("source_lang")
+  targetLang  String?  @map("target_lang")
+  sourceText  String   @map("source_text")
+  translation String
+  hits        Int?     @default(1)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("translations")
+}
