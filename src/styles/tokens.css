@@ -1,0 +1,21 @@
+/* Taken verbatim from gloss-reader-demo.html. Do not redesign — port. */
+:root {
+  --paper: #e9e7e0; /* cool oat, the desk */
+  --page: #fcfbf8; /* the sheet itself */
+  --ink: #1a1c21;
+  --ink-soft: #4a4d55;
+  --muted: #84878f;
+  --rule: #d6d3ca;
+  --lapis: #2a46b8; /* the gloss */
+  --lapis-wash: #eaedfa;
+  --gold: #9a6b18; /* saved / rubricated */
+  --gold-wash: #f6eedc;
+
+  --display: 'Bricolage Grotesque', system-ui, sans-serif;
+  --body: 'Newsreader', Georgia, serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  /* Glosses render in the target language. A fallback face looks broken, so
+     every non-Latin target we offer gets a real Noto face here. */
+  --khmer: 'Noto Sans Khmer', 'Noto Sans JP', 'Noto Sans SC', 'Noto Sans Thai',
+    'Newsreader', serif;
+}
