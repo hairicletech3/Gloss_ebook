@@ -1,0 +1,716 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gloss — read anything, in any language</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+Khmer:wght@400;500&display=swap" rel="stylesheet">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/epub.js/0.3.88/epub.min.js"></script>
+
+<style>
+  :root{
+    --paper:#E9E7E0;        /* cool oat, the desk */
+    --page:#FCFBF8;         /* the sheet itself */
+    --ink:#1A1C21;
+    --ink-soft:#4A4D55;
+    --muted:#84878F;
+    --rule:#D6D3CA;
+    --lapis:#2A46B8;        /* the gloss */
+    --lapis-wash:#EAEDFA;
+    --gold:#9A6B18;         /* saved / rubricated */
+    --gold-wash:#F6EEDC;
+
+    --display:'Bricolage Grotesque',system-ui,sans-serif;
+    --body:'Newsreader',Georgia,serif;
+    --mono:'IBM Plex Mono',ui-monospace,monospace;
+    --khmer:'Noto Sans Khmer','Newsreader',serif;
+  }
+
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:var(--body);
+    display:flex; flex-direction:column;
+    -webkit-font-smoothing:antialiased;
+  }
+  button{font:inherit; color:inherit; cursor:pointer}
+  :focus-visible{outline:2px solid var(--lapis); outline-offset:2px; border-radius:2px}
+
+  /* ── top bar ───────────────────────────────── */
+  .bar{
+    flex:0 0 auto; display:flex; align-items:center; gap:18px;
+    padding:0 20px; height:54px;
+    border-bottom:1px solid var(--rule); background:var(--paper);
+  }
+  .mark{
+    font-family:var(--display); font-weight:800; font-size:19px;
+    letter-spacing:-.03em; margin-right:2px;
+  }
+  .mark sup{
+    font-family:var(--mono); font-size:9px; font-weight:400;
+    color:var(--lapis); vertical-align:super; letter-spacing:0;
+  }
+  .bar-spacer{flex:1}
+
+  .chip{
+    display:inline-flex; align-items:center; gap:7px;
+    height:32px; padding:0 12px; border:1px solid var(--rule);
+    background:var(--page); border-radius:999px;
+    font-family:var(--mono); font-size:11.5px; letter-spacing:.02em;
+    transition:border-color .15s, background .15s;
+  }
+  .chip:hover{border-color:var(--ink-soft)}
+  .chip.solid{background:var(--ink); color:var(--page); border-color:var(--ink)}
+  .chip.solid:hover{background:#2C2F37}
+  .chip[aria-pressed="false"]{opacity:.5}
+
+  .langpair{
+    display:flex; align-items:center; gap:6px;
+    font-family:var(--mono); font-size:11.5px;
+  }
+  .langpair select{
+    font:inherit; font-family:var(--mono); font-size:11.5px;
+    border:1px solid var(--rule); background:var(--page);
+    border-radius:6px; padding:6px 8px; color:var(--ink); cursor:pointer;
+  }
+  .langpair .arrow{color:var(--lapis); font-size:13px}
+
+  /* ── layout ────────────────────────────────── */
+  .stage{flex:1 1 auto; display:flex; min-height:0}
+
+  .reader-col{
+    flex:1 1 auto; min-width:0; display:flex; flex-direction:column;
+    padding:26px 24px 0;
+  }
+  .sheet{
+    flex:1 1 auto; min-height:0; overflow-y:auto;
+    background:var(--page); border:1px solid var(--rule);
+    border-bottom:none;
+    border-radius:3px 3px 0 0;
+    padding:52px clamp(24px,6vw,76px) 60px;
+    box-shadow:0 1px 0 rgba(0,0,0,.03), 0 12px 28px -22px rgba(26,28,33,.5);
+    scroll-behavior:smooth;
+  }
+
+  /* ── the reading text + the gloss ──────────── */
+  #text{
+    max-width:62ch; margin:0 auto;
+    font-size:19px; font-weight:400; line-height:2.05;
+    color:var(--ink);
+  }
+  #text p{margin:0 0 1.35em}
+  #text p:last-child{margin-bottom:0}
+
+  .w{
+    position:relative; display:inline-block;
+    cursor:pointer; border-radius:2px;
+    transition:background .12s;
+  }
+  .w:hover{background:var(--lapis-wash)}
+
+  .w[data-gloss]::before{
+    content:attr(data-gloss);
+    position:absolute; left:50%; transform:translateX(-50%);
+    top:-1.18em; white-space:nowrap;
+    font-family:var(--khmer); font-size:11.5px; font-weight:500;
+    line-height:1; letter-spacing:.01em;
+    color:var(--lapis); pointer-events:none;
+  }
+  .w[data-gloss]{
+    background:var(--lapis-wash);
+    box-shadow:inset 0 -1px 0 var(--lapis);
+  }
+  .w.saved[data-gloss]{
+    background:var(--gold-wash);
+    box-shadow:inset 0 -1px 0 var(--gold);
+  }
+  .w.saved[data-gloss]::before{color:var(--gold)}
+  .w.pending::before{content:'···'; color:var(--muted); letter-spacing:.1em}
+
+  body.glosses-off .w[data-gloss]::before{display:none}
+  body.glosses-off .w[data-gloss]{background:transparent; box-shadow:inset 0 -1px 0 var(--rule)}
+
+  ::selection{background:#D9DEF6}
+
+  /* ── empty state ───────────────────────────── */
+  .empty{
+    height:100%; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center; gap:5px;
+  }
+  .empty .glyph{
+    font-family:var(--display); font-size:56px; font-weight:800;
+    letter-spacing:-.05em; line-height:1; color:var(--ink); position:relative;
+  }
+  .empty .glyph::before{
+    content:'ការអាន'; position:absolute; left:50%; transform:translateX(-50%);
+    top:-16px; font-family:var(--khmer); font-size:13px; font-weight:500;
+    color:var(--lapis); letter-spacing:0;
+  }
+  .empty h2{
+    font-family:var(--body); font-weight:400; font-size:17px;
+    color:var(--ink-soft); margin:14px 0 0; max-width:34ch; line-height:1.6;
+  }
+  .empty .hint{font-family:var(--mono); font-size:11px; color:var(--muted); margin-top:14px}
+  .empty .row{display:flex; gap:9px; margin-top:20px}
+
+  .dropping .sheet{border-color:var(--lapis); background:#FBFBFF}
+
+  /* ── footer / pager ────────────────────────── */
+  .pager{
+    flex:0 0 auto; display:flex; align-items:center; gap:14px;
+    height:46px; padding:0 clamp(16px,4vw,28px);
+    background:var(--page); border:1px solid var(--rule);
+    border-radius:0 0 3px 3px;
+    font-family:var(--mono); font-size:11.5px; color:var(--ink-soft);
+  }
+  .pager button{
+    background:none; border:none; padding:4px 6px; color:var(--ink-soft);
+    border-radius:4px;
+  }
+  .pager button:hover:not(:disabled){color:var(--ink); background:var(--paper)}
+  .pager button:disabled{opacity:.25; cursor:default}
+  .track{flex:1; height:2px; background:var(--rule); position:relative; border-radius:2px}
+  .track i{position:absolute; inset:0 auto 0 0; background:var(--lapis); border-radius:2px; transition:width .25s}
+  .doctitle{
+    max-width:26ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    color:var(--muted);
+  }
+  .spacer-b{height:24px; flex:0 0 auto}
+
+  /* ── margin (saved words) ──────────────────── */
+  .margin{
+    flex:0 0 292px; border-left:1px solid var(--rule);
+    display:flex; flex-direction:column; min-height:0; background:var(--paper);
+  }
+  .margin-head{
+    padding:20px 20px 12px; display:flex; align-items:baseline; gap:8px;
+    border-bottom:1px solid var(--rule);
+  }
+  .margin-head h3{
+    font-family:var(--display); font-size:13px; font-weight:600;
+    letter-spacing:.01em; margin:0; flex:1;
+  }
+  .count{font-family:var(--mono); font-size:11px; color:var(--muted)}
+  .margin-list{flex:1 1 auto; overflow-y:auto; padding:6px 0}
+  .entry{
+    padding:11px 20px; border-bottom:1px solid var(--rule);
+    display:flex; gap:10px; align-items:flex-start;
+  }
+  .entry:hover{background:var(--page)}
+  .entry .txt{flex:1; min-width:0}
+  .entry .term{
+    font-family:var(--body); font-size:15px; line-height:1.3;
+    display:block; cursor:pointer;
+  }
+  .entry .tr{
+    font-family:var(--khmer); font-size:12.5px; color:var(--lapis);
+    line-height:1.5; display:block; margin-top:2px;
+  }
+  .entry .ctx{
+    font-family:var(--body); font-style:italic; font-size:12px; color:var(--muted);
+    line-height:1.5; margin-top:5px; display:-webkit-box;
+    -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .entry .del{
+    background:none; border:none; color:var(--muted); font-size:15px;
+    line-height:1; padding:2px 3px; border-radius:4px; flex:0 0 auto;
+  }
+  .entry .del:hover{color:#B23A3A; background:var(--page)}
+  .margin-empty{
+    padding:30px 22px; font-size:13.5px; line-height:1.7; color:var(--muted);
+  }
+  .margin-empty b{color:var(--ink-soft); font-weight:400; font-style:italic}
+  .margin-foot{
+    flex:0 0 auto; border-top:1px solid var(--rule); padding:12px 16px;
+    display:flex; gap:8px;
+  }
+  .margin-foot .chip{flex:1; justify-content:center}
+
+  /* ── phrase card ───────────────────────────── */
+  .card{
+    position:fixed; z-index:60; max-width:310px;
+    background:var(--page); border:1px solid var(--ink);
+    border-radius:5px; padding:13px 15px;
+    box-shadow:0 14px 34px -16px rgba(26,28,33,.55);
+    display:none;
+  }
+  .card.on{display:block}
+  .card .src{font-size:14.5px; line-height:1.5; color:var(--ink-soft); font-style:italic}
+  .card .out{
+    font-family:var(--khmer); font-size:15px; line-height:1.7;
+    color:var(--lapis); margin-top:8px;
+    padding-top:8px; border-top:1px solid var(--rule);
+  }
+  .card .act{margin-top:11px; display:flex; gap:7px}
+  .card .act .chip{height:27px; font-size:10.5px; padding:0 10px}
+
+  .toast{
+    position:fixed; left:50%; bottom:24px; transform:translate(-50%,14px);
+    background:var(--ink); color:var(--page); padding:9px 15px; border-radius:6px;
+    font-family:var(--mono); font-size:11.5px; z-index:80;
+    opacity:0; pointer-events:none; transition:opacity .2s, transform .2s;
+  }
+  .toast.on{opacity:1; transform:translate(-50%,0)}
+
+  @media (max-width:900px){
+    .margin{
+      position:fixed; inset:auto 0 0 0; height:52vh; z-index:50;
+      border-left:none; border-top:1px solid var(--ink);
+      transform:translateY(100%); transition:transform .25s;
+      box-shadow:0 -12px 30px -20px rgba(0,0,0,.4);
+    }
+    .margin.open{transform:translateY(0)}
+    .reader-col{padding:14px 12px 0}
+    .sheet{padding:34px 20px 44px}
+    #text{font-size:17.5px}
+    .bar{gap:10px; padding:0 12px}
+    .langpair .lbl{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{transition:none !important; scroll-behavior:auto !important}
+  }
+</style>
+
+<div class="bar">
+  <span class="mark">Gloss<sup>01</sup></span>
+  <button class="chip solid" id="btn-import">Import a book</button>
+  <input type="file" id="file" accept=".pdf,.epub,.txt,.md" hidden>
+
+  <span class="bar-spacer"></span>
+
+  <span class="langpair">
+    <span class="lbl">reading</span>
+    <select id="src">
+      <option value="auto">detect</option>
+      <option>English</option><option>French</option><option>Spanish</option>
+      <option>German</option><option>Japanese</option><option>Chinese</option>
+      <option>Korean</option><option>Thai</option><option>Vietnamese</option>
+    </select>
+    <span class="arrow">→</span>
+    <select id="tgt">
+      <option selected>Khmer</option><option>English</option><option>French</option>
+      <option>Spanish</option><option>Japanese</option><option>Thai</option>
+      <option>Vietnamese</option><option>Chinese</option>
+    </select>
+  </span>
+
+  <button class="chip" id="btn-glosses" aria-pressed="true">Glosses on</button>
+  <button class="chip" id="btn-margin" hidden>Words</button>
+</div>
+
+<div class="stage">
+  <div class="reader-col">
+    <div class="sheet" id="sheet">
+      <div class="empty" id="empty">
+        <div class="glyph">Aa</div>
+        <h2>Bring in a PDF, EPUB or text file. Click any word and its translation is written in above the line — the way a scribe would gloss a manuscript.</h2>
+        <div class="row">
+          <button class="chip solid" id="btn-import2">Choose a file</button>
+          <button class="chip" id="btn-sample">Open the sample</button>
+        </div>
+        <div class="hint">or drop a file anywhere on this sheet</div>
+      </div>
+      <div id="text" hidden></div>
+    </div>
+
+    <div class="pager">
+      <span class="doctitle" id="doctitle">No book open</span>
+      <button id="prev" disabled>←</button>
+      <span id="pageno">—</span>
+      <button id="next" disabled>→</button>
+      <span class="track"><i id="fill" style="width:0"></i></span>
+    </div>
+    <div class="spacer-b"></div>
+  </div>
+
+  <aside class="margin" id="margin">
+    <div class="margin-head">
+      <h3>Margin</h3>
+      <span class="count" id="count">0 words</span>
+    </div>
+    <div class="margin-list" id="list">
+      <div class="margin-empty">Nothing collected yet. Click a word to gloss it, then press <b>S</b> — or select a phrase — to keep it here.</div>
+    </div>
+    <div class="margin-foot">
+      <button class="chip" id="btn-csv">Export CSV</button>
+      <button class="chip" id="btn-json">Export JSON</button>
+    </div>
+  </aside>
+</div>
+
+<div class="card" id="card">
+  <div class="src" id="card-src"></div>
+  <div class="out" id="card-out">···</div>
+  <div class="act">
+    <button class="chip solid" id="card-save">Keep in margin</button>
+    <button class="chip" id="card-close">Dismiss</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════
+   GLOSS — demo reader
+   Two places you will swap for your own stack are marked
+   ▓▓ SWAP ▓▓ . Everything else is plain DOM work.
+   ══════════════════════════════════════════════════════════════ */
+
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const $ = id => document.getElementById(id);
+const state = { pages: [], page: 0, title: '', words: [], lastWordEl: null, sel: null };
+
+/* ▓▓ SWAP 1 — TRANSLATION ▓▓ ────────────────────────────────────
+   This demo calls Claude so it works out of the box. In your build,
+   replace the body of translate() with one fetch to whichever engine
+   you picked, proxied through a Supabase Edge Function so your API
+   key never ships to the browser:
+
+     const { data } = await supabase.functions.invoke('translate', {
+       body: { text, from, to }
+     })
+     return data.translation
+
+   ...and inside that Edge Function:
+     fetch('https://translation.googleapis.com/language/translate/v2?key='+KEY, …)
+     // or  api-free.deepl.com/v2/translate
+     // or  api.cognitive.microsofttranslator.com/translate
+   Cache every result in a `translations` table keyed by
+   (text, from, to) — you will re-look-up the same words constantly,
+   and a cache hit costs nothing.
+──────────────────────────────────────────────────────────────── */
+const cache = new Map();
+
+async function translate(text, opts = {}) {
+  const from = $('src').value, to = $('tgt').value;
+  const key = `${from}|${to}|${text.toLowerCase()}`;
+  if (cache.has(key)) return cache.get(key);
+
+  const brief = opts.short
+    ? `Give the single most likely meaning of this word as it is used in the sentence. Two or three words at most.`
+    : `Translate this passage naturally.`;
+
+  const prompt =
+`You are a bilingual dictionary for a reader.
+${brief}
+Source language: ${from === 'auto' ? 'detect it' : from}
+Target language: ${to}
+
+Sentence for context: ${opts.context || '(none)'}
+Text to translate: ${text}
+
+Reply with ONLY a JSON object, no markdown fence, no preamble:
+{"translation":"…"}`;
+
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    const data = await r.json();
+    const raw = data.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    const out = JSON.parse(raw.replace(/```json|```/g, '').trim()).translation;
+    cache.set(key, out);
+    return out;
+  } catch (e) {
+    console.error(e);
+    return '(translation unavailable)';
+  }
+}
+
+/* ▓▓ SWAP 2 — STORAGE ▓▓ ────────────────────────────────────────
+   In-memory for the demo. Your Supabase version, with two tables —
+   books(id, user_id, title, pages jsonb) and
+   words(id, user_id, book_id, term, translation, context, page, due_at):
+
+     save:   await supabase.from('words').insert(entry)
+     load:   await supabase.from('words').select().eq('book_id', id)
+     delete: await supabase.from('words').delete().eq('id', id)
+
+   Turn on Row Level Security and scope every policy to auth.uid()
+   so a book you upload stays yours. Put the files themselves in a
+   Supabase Storage bucket, not in a table.
+──────────────────────────────────────────────────────────────── */
+const Store = {
+  async load()          { return state.words; },
+  async save(entry)     { state.words.unshift(entry); return entry; },
+  async remove(id)      { state.words = state.words.filter(w => w.id !== id); }
+};
+
+/* ── import ──────────────────────────────────────────────────── */
+async function readPDF(buf) {
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const pages = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const content = await (await pdf.getPage(i)).getTextContent();
+    let out = '', lastY = null;
+    for (const item of content.items) {
+      const y = item.transform[5];
+      if (lastY !== null && Math.abs(y - lastY) > 4) out += (Math.abs(y - lastY) > 14 ? '\n\n' : ' ');
+      out += item.str;
+      lastY = y;
+    }
+    pages.push(out.replace(/-\n+/g, '').replace(/[ \t]+/g, ' ').trim());
+  }
+  return pages.filter(Boolean);
+}
+
+async function readEPUB(buf) {
+  const book = ePub(buf);
+  await book.ready;
+  const out = [];
+  for (const item of book.spine.spineItems) {
+    try {
+      const doc = await item.load(book.load.bind(book));
+      const txt = (doc.body ? doc.body.innerText || doc.body.textContent : '')
+        .replace(/\n{3,}/g, '\n\n').trim();
+      if (txt.length > 40) out.push(...paginate(txt));
+      item.unload();
+    } catch (e) { /* skip unreadable section */ }
+  }
+  return out;
+}
+
+function paginate(txt, size = 2200) {
+  const paras = txt.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+  const pages = []; let buf = '';
+  for (const p of paras) {
+    if (buf.length + p.length > size && buf) { pages.push(buf.trim()); buf = ''; }
+    buf += p + '\n\n';
+  }
+  if (buf.trim()) pages.push(buf.trim());
+  return pages;
+}
+
+async function ingest(file) {
+  toast('Reading ' + file.name + ' …');
+  const buf = await file.arrayBuffer();
+  const ext = file.name.split('.').pop().toLowerCase();
+  let pages;
+  try {
+    if (ext === 'pdf')       pages = await readPDF(buf);
+    else if (ext === 'epub') pages = await readEPUB(buf);
+    else                     pages = paginate(new TextDecoder().decode(buf));
+  } catch (e) {
+    console.error(e);
+    return toast("Couldn't read that file — try a different export");
+  }
+  if (!pages || !pages.length)
+    return toast('No selectable text in that file. It may be scanned images — run OCR first.');
+  open(pages, file.name.replace(/\.[^.]+$/, ''));
+  toast(pages.length + ' pages ready');
+}
+
+function open(pages, title) {
+  state.pages = pages; state.page = 0; state.title = title;
+  $('empty').hidden = true; $('text').hidden = false;
+  $('doctitle').textContent = title;
+  $('btn-margin').hidden = false;
+  render();
+}
+
+/* ── render ──────────────────────────────────────────────────── */
+function render() {
+  const raw = state.pages[state.page] || '';
+  const html = raw.split(/\n{2,}/).map(par => {
+    const inner = par.split(/(\s+)/).map(tok => {
+      if (!/\S/.test(tok)) return tok;
+      const m = tok.match(/^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u);
+      const [, pre, core, post] = m;
+      if (!core) return esc(tok);
+      return esc(pre) + `<span class="w" tabindex="-1">${esc(core)}</span>` + esc(post);
+    }).join('');
+    return `<p>${inner}</p>`;
+  }).join('');
+
+  $('text').innerHTML = html;
+  $('sheet').scrollTop = 0;
+  $('pageno').textContent = (state.page + 1) + ' / ' + state.pages.length;
+  $('prev').disabled = state.page === 0;
+  $('next').disabled = state.page >= state.pages.length - 1;
+  $('fill').style.width = ((state.page + 1) / state.pages.length * 100) + '%';
+  markSaved();
+}
+
+const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+function sentenceAround(el) {
+  const p = el.closest('p'); if (!p) return '';
+  const full = p.textContent, i = full.indexOf(el.textContent);
+  const start = Math.max(0, full.lastIndexOf('.', i) + 1);
+  let end = full.indexOf('.', i); end = end === -1 ? full.length : end + 1;
+  return full.slice(start, end).trim();
+}
+
+/* ── interaction ─────────────────────────────────────────────── */
+$('text').addEventListener('mouseup', async e => {
+  const sel = window.getSelection();
+  const picked = sel.toString().trim();
+
+  if (picked && /\s/.test(picked)) {           // a phrase
+    const rect = sel.getRangeAt(0).getBoundingClientRect();
+    return phrase(picked, rect);
+  }
+  const el = e.target.closest('.w');
+  if (!el) return;
+
+  hideCard();
+  state.lastWordEl = el;
+  if (el.dataset.gloss) return;                 // already glossed
+
+  el.classList.add('pending');
+  el.dataset.gloss = '';
+  const context = sentenceAround(el);
+  const out = await translate(el.textContent, { short: true, context });
+  el.classList.remove('pending');
+  el.dataset.gloss = out;
+  el.dataset.context = context;
+});
+
+async function phrase(text, rect) {
+  state.sel = { term: text, context: '', translation: null };
+  $('card-src').textContent = text;
+  $('card-out').textContent = '···';
+  const c = $('card');
+  c.classList.add('on');
+  c.style.left = Math.min(Math.max(10, rect.left), innerWidth - 330) + 'px';
+  c.style.top = (rect.bottom + 10 + 220 > innerHeight ? rect.top - 200 : rect.bottom + 10) + 'px';
+  const out = await translate(text);
+  $('card-out').textContent = out;
+  state.sel.translation = out;
+}
+
+function hideCard() { $('card').classList.remove('on'); }
+$('card-close').onclick = hideCard;
+$('card-save').onclick = () => {
+  if (!state.sel || !state.sel.translation) return;
+  keep(state.sel.term, state.sel.translation, state.sel.term, 'phrase');
+  hideCard();
+};
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') hideCard();
+  if (e.key === 'ArrowRight' && !$('next').disabled) go(1);
+  if (e.key === 'ArrowLeft' && !$('prev').disabled) go(-1);
+  if ((e.key === 's' || e.key === 'S') && state.lastWordEl && state.lastWordEl.dataset.gloss) {
+    const el = state.lastWordEl;
+    keep(el.textContent, el.dataset.gloss, el.dataset.context || '', 'word');
+  }
+});
+
+/* ── margin ──────────────────────────────────────────────────── */
+async function keep(term, translation, context, type) {
+  if (state.words.some(w => w.term.toLowerCase() === term.toLowerCase()))
+    return toast('Already in the margin');
+  await Store.save({
+    id: crypto.randomUUID(), term, translation, context, type,
+    page: state.page + 1, at: new Date().toISOString()
+  });
+  drawList(); markSaved();
+  toast('Kept — ' + term);
+}
+
+function markSaved() {
+  const set = new Set(state.words.map(w => w.term.toLowerCase()));
+  document.querySelectorAll('.w').forEach(el =>
+    el.classList.toggle('saved', set.has(el.textContent.toLowerCase())));
+}
+
+function drawList() {
+  const l = $('list');
+  $('count').textContent = state.words.length + (state.words.length === 1 ? ' word' : ' words');
+  if (!state.words.length) {
+    l.innerHTML = '<div class="margin-empty">Nothing collected yet. Click a word to gloss it, then press <b>S</b> — or select a phrase — to keep it here.</div>';
+    return;
+  }
+  l.innerHTML = state.words.map(w => `
+    <div class="entry" data-id="${w.id}">
+      <div class="txt">
+        <span class="term" data-goto="${w.page}">${esc(w.term)}</span>
+        <span class="tr">${esc(w.translation)}</span>
+        ${w.context ? `<div class="ctx">${esc(w.context)}</div>` : ''}
+      </div>
+      <button class="del" title="Remove">×</button>
+    </div>`).join('');
+}
+
+$('list').addEventListener('click', async e => {
+  const entry = e.target.closest('.entry'); if (!entry) return;
+  if (e.target.classList.contains('del')) {
+    await Store.remove(entry.dataset.id); drawList(); markSaved(); return;
+  }
+  const p = e.target.dataset.goto;
+  if (p) { state.page = +p - 1; render(); }
+});
+
+/* ── export ──────────────────────────────────────────────────── */
+function download(name, text, mime) {
+  const url = URL.createObjectURL(new Blob([text], { type: mime }));
+  const a = document.createElement('a');
+  a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url);
+}
+$('btn-csv').onclick = () => {
+  if (!state.words.length) return toast('Margin is empty');
+  const q = s => '"' + String(s).replace(/"/g, '""') + '"';
+  download('gloss-words.csv',
+    'term,translation,context,page\n' +
+    state.words.map(w => [w.term, w.translation, w.context, w.page].map(q).join(',')).join('\n'),
+    'text/csv');
+};
+$('btn-json').onclick = () => {
+  if (!state.words.length) return toast('Margin is empty');
+  download('gloss-words.json', JSON.stringify(state.words, null, 2), 'application/json');
+};
+
+/* ── chrome ──────────────────────────────────────────────────── */
+function go(d) { state.page = Math.min(Math.max(0, state.page + d), state.pages.length - 1); render(); }
+$('next').onclick = () => go(1);
+$('prev').onclick = () => go(-1);
+$('btn-import').onclick = $('btn-import2').onclick = () => $('file').click();
+$('file').onchange = e => e.target.files[0] && ingest(e.target.files[0]);
+$('btn-glosses').onclick = e => {
+  const on = document.body.classList.toggle('glosses-off');
+  e.target.setAttribute('aria-pressed', String(!on));
+  e.target.textContent = on ? 'Glosses off' : 'Glosses on';
+};
+$('btn-margin').onclick = () => $('margin').classList.toggle('open');
+
+['dragover', 'dragenter'].forEach(ev =>
+  document.addEventListener(ev, e => { e.preventDefault(); document.body.classList.add('dropping'); }));
+['dragleave', 'drop'].forEach(ev =>
+  document.addEventListener(ev, e => { e.preventDefault(); document.body.classList.remove('dropping'); }));
+document.addEventListener('drop', e => e.dataTransfer.files[0] && ingest(e.dataTransfer.files[0]));
+
+let toastT;
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2600);
+}
+
+/* ── sample so the demo has something to chew on ─────────────── */
+$('btn-sample').onclick = () => {
+  $('src').value = 'French';
+  open(paginate(
+`Le libraire gardait la boutique ouverte bien après la tombée de la nuit. Il disait que les livres respirent mieux dans le noir, quand personne ne les regarde.
+
+Chaque soir, une femme entrait sans rien acheter. Elle prenait un volume sur l'étagère du fond, lisait trois pages debout, puis le remettait exactement à sa place. Le libraire ne lui a jamais demandé son nom.
+
+Un hiver, elle a cessé de venir. Le livre est resté sur l'étagère, ouvert à la même page, et le libraire a commencé à le lire lui-même, une page par soir, pour ne pas finir trop vite.
+
+Il a compris à la quatrième page pourquoi elle revenait. Ce n'était pas l'histoire. C'était une note écrite au crayon dans la marge, d'une écriture qui n'était pas la sienne, et qui répondait à chaque phrase comme une conversation commencée des années plus tôt.`),
+    'The bookseller (sample)');
+  toast('Click any French word');
+};
+
+drawList();
+</script>
