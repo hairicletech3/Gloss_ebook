@@ -21,7 +21,7 @@ export function Margin({ words, open, onJump, onDelete }: Props) {
       <div className="margin-list">
         {words.length === 0 ? (
           <div className="margin-empty">
-            Nothing collected yet. Click a word to gloss it, then press <b>S</b> — or select a
+            Nothing collected yet. Select a word to gloss it, then press <b>S</b> — or select a
             phrase — to keep it here.
           </div>
         ) : (

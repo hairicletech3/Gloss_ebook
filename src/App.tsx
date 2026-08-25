@@ -6,6 +6,7 @@ import { importBook, listBooks, getBook, saveLastPage, deleteBook } from './lib/
 import { listWords, saveWord, deleteWord } from './lib/words';
 import { translate } from './lib/translate';
 import { parsePage } from './lib/parsePage';
+import { useScreenChunks } from './lib/useScreenChunks';
 import { sentenceAt, tokenize } from './lib/tokenize';
 import { segmenterLocale } from './lib/languages';
 import type { Book, BookMeta, Word, WordKind } from './lib/types';
@@ -24,6 +25,10 @@ type Phrase = { anchor: DOMRect; source: string; translation: string | null };
 
 const LS_SRC = 'gloss.srcLang';
 const LS_TGT = 'gloss.tgtLang';
+/** Stable empty-array reference — `parsed?.paragraphs ?? []` would otherwise
+    hand useScreenChunks a new array every render whenever no book is open,
+    which loops its measurement effect forever. */
+const NO_PARAGRAPHS: string[] = [];
 
 export default function App() {
   const { toast, node: toastNode } = useToast();
@@ -35,6 +40,13 @@ export default function App() {
   const [booksLoading, setBooksLoading] = useState(true);
   const [book, setBook] = useState<Book | null>(null);
   const [page, setPage] = useState(0);
+  /** Which screen-fit chunk of the stored page is showing. -1 is a sentinel
+      for "the last chunk, whatever that turns out to be" — used when
+      crossing backward into a page whose chunk count isn't known yet, so it
+      resolves correctly once useScreenChunks finishes measuring instead of
+      racing it. */
+  const [chunkIndex, setChunkIndex] = useState(0);
+  const [turnDir, setTurnDir] = useState<'next' | 'prev' | null>(null);
 
   const [words, setWords] = useState<Word[]>([]);
   const [glosses, setGlosses] = useState<Map<string, string>>(new Map());
@@ -105,6 +117,29 @@ export default function App() {
     [book, page, locale],
   );
 
+  /* A stored page (~2200 chars) can be taller than the window, so it's
+     further split into screen-fit chunks here — real pagination instead of
+     letting the sheet scroll. Measurement happens in a layout effect inside
+     the hook, so `chunks` can lag a render behind a page change; resolving
+     the -1 sentinel here (rather than in an effect racing that measurement)
+     means it's always read fresh, however many renders it takes to settle. */
+  const chunks = useScreenChunks(parsed?.paragraphs ?? NO_PARAGRAPHS, sheetRef);
+  const resolvedChunkIndex =
+    chunkIndex < 0 ? chunks.length - 1 : Math.min(chunkIndex, chunks.length - 1);
+  const currentChunk = chunks[Math.max(0, resolvedChunkIndex)] ?? {
+    start: 0,
+    end: parsed?.paragraphs.length ?? 0,
+    fits: true,
+  };
+
+  /* Safety net for a resize shrinking the chunk count out from under a
+     non-sentinel index — page-turn navigation already sets chunkIndex
+     explicitly (0, -1, or a direct neighbor), so this never needs to guess
+     "why" chunks changed. */
+  useEffect(() => {
+    setChunkIndex((ci) => (ci < 0 ? ci : Math.min(ci, Math.max(0, chunks.length - 1))));
+  }, [chunks.length]);
+
   const bookWords = useMemo(
     () => (book ? words.filter((w) => w.book_id === book.id) : words),
     [words, book],
@@ -139,7 +174,7 @@ export default function App() {
 
   useEffect(() => {
     if (sheetRef.current) sheetRef.current.scrollTop = 0;
-  }, [page, book]);
+  }, [page, chunkIndex, book]);
 
   /* Persist the reading position, debounced. Opening a book resumes here. */
   useEffect(() => {
@@ -157,8 +192,11 @@ export default function App() {
     async (meta: BookMeta) => {
       try {
         const full = await getBook(meta.id);
+        const startPage = Math.min(Math.max(0, full.last_page), Math.max(0, full.page_count - 1));
         setBook(full);
-        setPage(Math.min(Math.max(0, full.last_page), Math.max(0, full.page_count - 1)));
+        setPage(startPage);
+        setChunkIndex(0);
+        setTurnDir(null);
         setGlosses(new Map());
         setPending(new Set());
         setLastWord(null);
@@ -207,15 +245,31 @@ export default function App() {
     [book, toast],
   );
 
+  /* Turning "next"/"prev" (delta is always ±1) walks the on-screen chunks of
+     the current stored page first, and only crosses into the next/previous
+     stored page once you're at the edge of those — going back across that
+     boundary lands on the previous page's LAST chunk, not its first, so
+     "back" reads like turning back one physical page rather than jumping to
+     its start. */
   const go = useCallback(
     (delta: number) => {
+      if (!book || delta === 0) return;
       setPhrase(null);
-      setPage((p) => {
-        if (!book) return p;
-        return Math.min(Math.max(0, p + delta), Math.max(0, book.page_count - 1));
-      });
+      const dir = delta > 0 ? 'next' : 'prev';
+      const targetChunk = resolvedChunkIndex + delta;
+      if (targetChunk >= 0 && targetChunk < chunks.length) {
+        setTurnDir(dir);
+        setChunkIndex(targetChunk);
+        return;
+      }
+      const nextPage =
+        delta > 0 ? Math.min(page + 1, book.page_count - 1) : Math.max(page - 1, 0);
+      if (nextPage === page) return;
+      setTurnDir(dir);
+      setPage(nextPage);
+      setChunkIndex(delta > 0 ? 0 : -1);
     },
-    [book],
+    [book, page, resolvedChunkIndex, chunks.length],
   );
 
   /* ── glossing ──────────────────────────────────────────────── */
@@ -281,11 +335,15 @@ export default function App() {
     [locale],
   );
 
+  /* A plain click leaves window.getSelection() empty, so it falls through
+     and does nothing — translating now requires dragging across a word (or
+     double-clicking it, which is a native selection too), same as a phrase. */
   const onSheetMouseUp = useCallback(
     (e: React.MouseEvent) => {
       const sel = window.getSelection();
       const picked = sel?.toString().trim() ?? '';
-      if (picked && sel && sel.rangeCount > 0 && isPhrase(picked)) {
+      if (!picked || !sel || sel.rangeCount === 0) return;
+      if (isPhrase(picked)) {
         startPhrase(picked, sel.getRangeAt(0).getBoundingClientRect());
         return;
       }
@@ -456,8 +514,6 @@ export default function App() {
         onTgtLang={setTgtLang}
         glossesOn={glossesOn}
         onToggleGlosses={() => setGlossesOn((v) => !v)}
-        onImport={() => fileRef.current?.click()}
-        importing={importing}
         hasBook={Boolean(book)}
         onCloseBook={() => setBook(null)}
         onToggleMargin={() => setMarginOpen((v) => !v)}
@@ -480,16 +536,20 @@ export default function App() {
           <div
             className="sheet"
             ref={sheetRef}
+            style={currentChunk.fits ? undefined : { overflowY: 'auto' }}
             onMouseUp={onSheetMouseUp}
             onKeyDown={onSheetKeyDown}
             onFocus={onSheetFocus}
           >
             {book && parsed ? (
               <Page
+                key={`${page}-${chunkIndex}`}
                 parsed={parsed}
                 glosses={shownGlosses}
                 pending={pending}
                 savedTerms={savedTerms}
+                turnDir={turnDir}
+                range={[currentChunk.start, currentChunk.end]}
               />
             ) : (
               <Shelf
@@ -508,6 +568,8 @@ export default function App() {
             title={book?.title ?? ''}
             page={page}
             pageCount={book?.page_count ?? 0}
+            chunkIndex={resolvedChunkIndex}
+            chunkCount={chunks.length}
             onGo={go}
           />
           <div className="spacer-b" />
@@ -518,6 +580,7 @@ export default function App() {
           open={marginOpen}
           onJump={(p) => {
             setPage(p);
+            setChunkIndex(0);
             setMarginOpen(false);
           }}
           onDelete={removeWord}

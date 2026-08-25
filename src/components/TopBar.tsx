@@ -7,8 +7,6 @@ type Props = {
   onTgtLang: (v: string) => void;
   glossesOn: boolean;
   onToggleGlosses: () => void;
-  onImport: () => void;
-  importing: boolean;
   hasBook: boolean;
   onCloseBook: () => void;
   onToggleMargin: () => void;
@@ -22,8 +20,6 @@ export function TopBar({
   onTgtLang,
   glossesOn,
   onToggleGlosses,
-  onImport,
-  importing,
   hasBook,
   onCloseBook,
   onToggleMargin,
@@ -31,18 +27,9 @@ export function TopBar({
 }: Props) {
   return (
     <div className="bar">
-      <span className="mark">
+      <button className="mark" onClick={onCloseBook} title="Back to your library">
         Gloss<sup>01</sup>
-      </span>
-
-      <button className="chip solid" onClick={onImport} disabled={importing}>
-        {importing ? 'Importing …' : 'Import a book'}
       </button>
-      {hasBook && (
-        <button className="chip" onClick={onCloseBook}>
-          Shelf
-        </button>
-      )}
 
       <span className="bar-spacer" />
 

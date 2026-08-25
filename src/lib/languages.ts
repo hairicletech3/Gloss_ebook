@@ -13,30 +13,10 @@ export type Lang = {
 export const SOURCE_LANGS: Lang[] = [
   { code: 'auto', name: 'detect' },
   { code: 'en', name: 'English' },
-  { code: 'fr', name: 'French' },
-  { code: 'es', name: 'Spanish' },
-  { code: 'de', name: 'German' },
-  { code: 'it', name: 'Italian' },
-  { code: 'pt', name: 'Portuguese' },
-  { code: 'ru', name: 'Russian' },
-  { code: 'ja', name: 'Japanese', unspaced: true },
   { code: 'zh-Hans', name: 'Chinese', unspaced: true },
-  { code: 'ko', name: 'Korean' },
-  { code: 'th', name: 'Thai', unspaced: true },
-  { code: 'km', name: 'Khmer', unspaced: true },
-  { code: 'vi', name: 'Vietnamese' },
 ];
 
-export const TARGET_LANGS: Lang[] = [
-  { code: 'km', name: 'Khmer' },
-  { code: 'en', name: 'English' },
-  { code: 'fr', name: 'French' },
-  { code: 'es', name: 'Spanish' },
-  { code: 'ja', name: 'Japanese' },
-  { code: 'th', name: 'Thai' },
-  { code: 'vi', name: 'Vietnamese' },
-  { code: 'zh-Hans', name: 'Chinese' },
-];
+export const TARGET_LANGS: Lang[] = [{ code: 'km', name: 'Khmer' }];
 
 const BY_CODE = new Map<string, Lang>(
   [...SOURCE_LANGS, ...TARGET_LANGS].map((l) => [l.code, l]),

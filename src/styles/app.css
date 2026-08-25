@@ -45,6 +45,16 @@ button {
   font-size: 19px;
   letter-spacing: -0.03em;
   margin-right: 2px;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--ink);
+}
+button.mark {
+  cursor: pointer;
+}
+button.mark:hover {
+  color: var(--lapis);
 }
 .mark sup {
   font-family: var(--mono);
@@ -132,7 +142,7 @@ button {
 .sheet {
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
+  overflow-y: hidden;
   background: var(--page);
   border: 1px solid var(--rule);
   border-bottom: none;
@@ -140,6 +150,7 @@ button {
   padding: 52px clamp(24px, 6vw, 76px) 60px;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03), 0 12px 28px -22px rgba(26, 28, 33, 0.5);
   scroll-behavior: smooth;
+  perspective: 1600px;
 }
 
 /* ── the reading text + the gloss ──────────── */
@@ -153,6 +164,47 @@ button {
   font-weight: 400;
   line-height: 2.05;
   color: var(--ink);
+}
+
+/* A page turning in from the direction you navigated — a light 3D tilt
+   rather than a full curl, so it still reads instantly at reading speed. */
+.text.turn-next {
+  transform-origin: right center;
+  animation: turn-next 320ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.text.turn-prev {
+  transform-origin: left center;
+  animation: turn-prev 320ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+@keyframes turn-next {
+  from {
+    transform: translateX(22px) rotateY(16deg);
+    opacity: 0.5;
+    filter: brightness(0.85);
+  }
+  to {
+    transform: translateX(0) rotateY(0deg);
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+@keyframes turn-prev {
+  from {
+    transform: translateX(-22px) rotateY(-16deg);
+    opacity: 0.5;
+    filter: brightness(0.85);
+  }
+  to {
+    transform: translateX(0) rotateY(0deg);
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .text.turn-next,
+  .text.turn-prev {
+    animation: none;
+  }
 }
 .text p {
   margin: 0 0 1.35em;
@@ -235,125 +287,228 @@ button {
   background: #d9def6;
 }
 
-/* ── empty state / library ─────────────────── */
-.empty {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  gap: 5px;
-}
-.empty .glyph {
-  font-family: var(--display);
-  font-size: 56px;
-  font-weight: 800;
-  letter-spacing: -0.05em;
-  line-height: 1;
-  color: var(--ink);
-  position: relative;
-}
-.empty .glyph::before {
-  content: 'ការអាន';
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  top: -16px;
-  font-family: var(--khmer);
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--lapis);
-  letter-spacing: 0;
-}
-.empty h2 {
-  font-family: var(--body);
-  font-weight: 400;
-  font-size: 17px;
-  color: var(--ink-soft);
-  margin: 14px 0 0;
-  max-width: 34ch;
-  line-height: 1.6;
-}
-.empty .hint {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--muted);
-  margin-top: 14px;
-}
-.empty .row {
-  display: flex;
-  gap: 9px;
-  margin-top: 20px;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
+/* ── library ───────────────────────────────── */
 .dropping .sheet {
   border-color: var(--lapis);
   background: #fbfbff;
 }
 
-.shelf {
+.library {
+  min-height: 100%;
   width: 100%;
-  max-width: 62ch;
-  margin: 40px auto 0;
+  max-width: 78ch;
+  margin: 0 auto;
+  padding: 8px 4px 40px;
   text-align: left;
-  border-top: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
 }
-.shelf h3 {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  font-weight: 400;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin: 22px 0 6px;
-}
-.shelf-row {
+.library-head {
   display: flex;
   align-items: baseline;
+  justify-content: space-between;
   gap: 12px;
-  padding: 11px 4px;
+  padding-bottom: 16px;
+  margin-bottom: 24px;
   border-bottom: 1px solid var(--rule);
 }
-.shelf-row:hover {
-  background: var(--paper);
+.library-head h2 {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
 }
-.shelf-open {
+.library-head .count {
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--muted);
+}
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 22px 18px;
+}
+.library .hint {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  margin-top: 30px;
+}
+
+.library-empty {
   flex: 1;
-  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  text-align: center;
+  min-height: 320px;
+}
+.library-empty p {
+  font-family: var(--body);
+  font-size: 15px;
+  color: var(--ink-soft);
+  margin: 0;
+  max-width: 30ch;
+  line-height: 1.6;
+}
+.ghost-shelf {
+  display: flex;
+  gap: 14px;
+}
+.ghost-cover {
+  width: 74px;
+  aspect-ratio: 2 / 3;
+  border: 1.5px dashed var(--rule);
+  border-radius: 4px;
+  background: none;
+}
+.ghost-cover:nth-child(1) {
+  transform: rotate(-4deg);
+}
+.ghost-cover:nth-child(3) {
+  transform: rotate(4deg);
+}
+.ghost-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  font-weight: 300;
+  color: var(--muted);
+  border-color: var(--lapis);
+  transition: color 0.15s, background 0.15s, transform 0.15s;
+}
+.ghost-add:hover {
+  color: var(--lapis);
+  background: var(--lapis-wash);
+  transform: scale(1.04);
+}
+
+.book-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.book-cover {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 2 / 3;
+  width: 100%;
+  border: none;
+  border-radius: 4px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08), 0 10px 18px -12px rgba(26, 28, 33, 0.55);
+  overflow: hidden;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.book-cover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08), 0 14px 22px -12px rgba(26, 28, 33, 0.6);
+}
+.book-cover::before {
+  /* the spine */
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  background: rgba(0, 0, 0, 0.14);
+}
+.book-cover-glyph {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 34px;
+  letter-spacing: -0.03em;
+  opacity: 0.92;
+}
+.book-cover-lang {
+  position: absolute;
+  top: 8px;
+  right: 9px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.book-cover-progress {
+  position: absolute;
+  left: 7px;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: rgba(0, 0, 0, 0.14);
+}
+.book-cover-progress span {
+  display: block;
+  height: 100%;
+  background: currentColor;
+  opacity: 0.85;
+}
+.book-title {
   background: none;
   border: none;
   padding: 0;
+  margin-top: 9px;
   text-align: left;
   font-family: var(--body);
-  font-size: 16px;
+  font-size: 13.5px;
+  line-height: 1.35;
   color: var(--ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.shelf-open:hover {
+.book-title:hover {
   color: var(--lapis);
 }
-.shelf-meta {
+.book-meta {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--muted);
-  flex: 0 0 auto;
+  margin-top: 3px;
 }
-.shelf-del {
-  background: none;
+.book-del {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: none;
-  color: var(--muted);
-  font-size: 15px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--ink-soft);
+  font-size: 14px;
   line-height: 1;
-  padding: 2px 4px;
-  border-radius: 4px;
-  flex: 0 0 auto;
+  opacity: 0;
+  transition: opacity 0.12s;
 }
-.shelf-del:hover {
+.book-card:hover .book-del {
+  opacity: 1;
+}
+/* A hover reveal is unreachable on a touchscreen — iPad included — so give
+   touch devices a permanently-visible (if quieter) delete button instead. */
+@media (hover: none) {
+  .book-del {
+    opacity: 0.8;
+  }
+}
+.book-del:hover {
   color: #b23a3a;
   background: var(--page);
 }
@@ -408,6 +563,10 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
+}
+.subpage {
+  color: var(--muted);
+  opacity: 0.75;
 }
 .spacer-b {
   height: 24px;
@@ -701,8 +860,30 @@ button {
   color: var(--muted);
 }
 
-/* ── mobile ────────────────────────────────── */
-@media (max-width: 900px) {
+/* ── tablet (iPad portrait/landscape) ────────
+   Wide enough to keep the margin as a real side panel, not a bottom sheet —
+   just narrower, so the reading column still has room to breathe. */
+@media (min-width: 681px) and (max-width: 1024px) {
+  .margin {
+    flex-basis: 240px;
+  }
+  .reader-col {
+    padding: 20px 16px 0;
+  }
+  .sheet {
+    padding: 40px clamp(18px, 4vw, 44px) 52px;
+  }
+  .bar {
+    gap: 12px;
+    padding: 0 14px;
+  }
+  .library-grid {
+    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  }
+}
+
+/* ── phone ─────────────────────────────────── */
+@media (max-width: 680px) {
   .margin {
     position: fixed;
     inset: auto 0 0 0;
