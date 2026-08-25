@@ -528,21 +528,6 @@ button.mark:hover {
   font-size: 11.5px;
   color: var(--ink-soft);
 }
-.pager button {
-  background: none;
-  border: none;
-  padding: 4px 6px;
-  color: var(--ink-soft);
-  border-radius: 4px;
-}
-.pager button:hover:not(:disabled) {
-  color: var(--ink);
-  background: var(--paper);
-}
-.pager button:disabled {
-  opacity: 0.25;
-  cursor: default;
-}
 .track {
   flex: 1;
   height: 2px;
@@ -563,10 +548,6 @@ button.mark:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
-}
-.subpage {
-  color: var(--muted);
-  opacity: 0.75;
 }
 .spacer-b {
   height: 24px;

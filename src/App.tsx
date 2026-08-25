@@ -335,49 +335,6 @@ export default function App() {
     [locale],
   );
 
-  /* A plain click leaves window.getSelection() empty, so it falls through
-     and does nothing — translating now requires dragging across a word (or
-     double-clicking it, which is a native selection too), same as a phrase. */
-  const onSheetMouseUp = useCallback(
-    (e: React.MouseEvent) => {
-      const sel = window.getSelection();
-      const picked = sel?.toString().trim() ?? '';
-      if (!picked || !sel || sel.rangeCount === 0) return;
-      if (isPhrase(picked)) {
-        startPhrase(picked, sel.getRangeAt(0).getBoundingClientRect());
-        return;
-      }
-      const el = (e.target as HTMLElement).closest<HTMLElement>('.w');
-      if (!el?.dataset.key) return;
-      setPhrase(null);
-      void glossWord(el.dataset.key);
-    },
-    [isPhrase, startPhrase, glossWord],
-  );
-
-  /* Known gap §5: the prototype was mouse-only. Words are tabbable and
-     Enter or Space glosses the focused one. */
-  const onSheetKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key !== 'Enter' && e.key !== ' ') return;
-      const el = (e.target as HTMLElement).closest<HTMLElement>('.w');
-      if (!el?.dataset.key) return;
-      e.preventDefault();
-      void glossWord(el.dataset.key);
-    },
-    [glossWord],
-  );
-
-  const onSheetFocus = useCallback(
-    (e: React.FocusEvent) => {
-      const el = (e.target as HTMLElement).closest<HTMLElement>('.w');
-      if (!el?.dataset.key) return;
-      const ref = refFor(el.dataset.key);
-      if (ref) setLastWord(ref);
-    },
-    [refFor],
-  );
-
   /* ── the margin ────────────────────────────────────────────── */
   const keep = useCallback(
     async (term: string, translation: string, context: string, kind: WordKind) => {
@@ -406,6 +363,90 @@ export default function App() {
       }
     },
     [session, book, bookWords, page, toast],
+  );
+
+  /* Tap/Enter on a word: gloss it if it isn't glossed yet, otherwise save it
+     — see onSheetMouseUp and onSheetKeyDown below. */
+  const activateWord = useCallback(
+    (key: string) => {
+      if (shownGlosses.has(key) && !pending.has(key)) {
+        const ref = refFor(key);
+        const translation = shownGlosses.get(key);
+        if (ref && translation) void keep(ref.term, translation, ref.context, 'word');
+        return;
+      }
+      void glossWord(key);
+    },
+    [shownGlosses, pending, refFor, keep, glossWord],
+  );
+
+  /* A tap/click on a word glosses it. A second tap on that same word — now
+     that it already carries a gloss — saves it to the margin instead of
+     re-requesting a translation. This is the touch path: there is no "press
+     S" on an iPad, so tap-tap-to-save has to work without a keyboard. A drag
+     across more than one word is still read as a phrase selection. */
+  const onSheetMouseUp = useCallback(
+    (e: React.MouseEvent) => {
+      const sel = window.getSelection();
+      const picked = sel?.toString().trim() ?? '';
+      if (picked && sel && sel.rangeCount > 0 && isPhrase(picked)) {
+        startPhrase(picked, sel.getRangeAt(0).getBoundingClientRect());
+        return;
+      }
+      const el = (e.target as HTMLElement).closest<HTMLElement>('.w');
+      if (!el?.dataset.key) return;
+      setPhrase(null);
+      activateWord(el.dataset.key);
+    },
+    [isPhrase, startPhrase, activateWord],
+  );
+
+  /* Known gap §5: the prototype was mouse-only. Words are tabbable and
+     Enter or Space glosses the focused one, then saves it on a second press
+     — same tap-tap rule as the pointer path above. */
+  const onSheetKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const el = (e.target as HTMLElement).closest<HTMLElement>('.w');
+      if (!el?.dataset.key) return;
+      e.preventDefault();
+      activateWord(el.dataset.key);
+    },
+    [activateWord],
+  );
+
+  /* Swipe left/right turns the page on touch devices, alongside the Pager
+     arrows. A long-press-to-select gesture stays put (native selection
+     handles), while a quick horizontal drag reads as a page turn — the two
+     rarely overlap in practice, so no extra disambiguation is needed. */
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const onSheetTouchStart = useCallback((e: React.TouchEvent) => {
+    const t = e.touches[0];
+    touchStart.current = t ? { x: t.clientX, y: t.clientY } : null;
+  }, []);
+  const onSheetTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      const start = touchStart.current;
+      touchStart.current = null;
+      if (!start) return;
+      const t = e.changedTouches[0];
+      if (!t) return;
+      const dx = t.clientX - start.x;
+      const dy = t.clientY - start.y;
+      if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      go(dx < 0 ? 1 : -1);
+    },
+    [go],
+  );
+
+  const onSheetFocus = useCallback(
+    (e: React.FocusEvent) => {
+      const el = (e.target as HTMLElement).closest<HTMLElement>('.w');
+      if (!el?.dataset.key) return;
+      const ref = refFor(el.dataset.key);
+      if (ref) setLastWord(ref);
+    },
+    [refFor],
   );
 
   const keepLastWord = useCallback(() => {
@@ -540,6 +581,8 @@ export default function App() {
             onMouseUp={onSheetMouseUp}
             onKeyDown={onSheetKeyDown}
             onFocus={onSheetFocus}
+            onTouchStart={onSheetTouchStart}
+            onTouchEnd={onSheetTouchEnd}
           >
             {book && parsed ? (
               <Page
@@ -570,7 +613,6 @@ export default function App() {
             pageCount={book?.page_count ?? 0}
             chunkIndex={resolvedChunkIndex}
             chunkCount={chunks.length}
-            onGo={go}
           />
           <div className="spacer-b" />
         </div>
