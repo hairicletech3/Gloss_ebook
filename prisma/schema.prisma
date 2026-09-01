@@ -33,7 +33,8 @@ model Book {
   lastPage    Int      @default(0) @map("last_page")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  words Word[]
+  words      Word[]
+  highlights Highlight[]
 
   @@index([userId, createdAt(sort: Desc)], map: "books_user")
   @@map("books")
@@ -66,6 +67,39 @@ model Word {
   // cannot express the lower() call, so that index is created in raw SQL.
   @@index([userId, dueAt], map: "words_due")
   @@map("words")
+}
+
+/// A passage marked in a book, optionally with a note written against it.
+/// A "note" is not a separate thing here — it is a highlight whose `note` is
+/// filled in, so one selection flow covers both.
+model Highlight {
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// FK to auth.users, added as raw SQL — Prisma must not manage the auth schema.
+  userId String @map("user_id") @db.Uuid
+  bookId String @map("book_id") @db.Uuid
+
+  /// Index into the book's `pages` array.
+  page Int
+  /// Anchor: paragraph index within that page, then character offsets into
+  /// that paragraph. Stable because a book's extracted text is written once
+  /// at import and never rewritten — the same coordinates parsePage emits.
+  paraIndex Int @map("para_index")
+  startOff  Int @map("start_off")
+  endOff    Int @map("end_off")
+
+  /// Denormalised copy of the marked text, so the Notes list can render
+  /// without loading the whole book.
+  text  String
+  note  String?
+  /// One of the named swatches in lib/highlights.ts, not a raw CSS colour.
+  color String  @default("yellow")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@index([userId, bookId, page], map: "highlights_book_page")
+  @@map("highlights")
 }
 
 /// The shared translation cache. Do not skip this — it is what keeps the bill

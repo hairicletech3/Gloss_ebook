@@ -33,3 +33,25 @@ export type Word = {
 };
 
 export type TranslateMode = 'word' | 'phrase';
+
+export type HighlightColor = 'yellow' | 'blue' | 'green' | 'pink';
+
+/**
+ * A marked passage. A "note" is the same row with `note` filled in — one
+ * table and one selection flow covers both. Anchored by paragraph index and
+ * character offsets rather than by matching the text, which is only safe
+ * because a book's extracted pages are written once at import.
+ */
+export type Highlight = {
+  id: string;
+  user_id: string;
+  book_id: string;
+  page: number;
+  para_index: number;
+  start_off: number;
+  end_off: number;
+  text: string;
+  note: string | null;
+  color: HighlightColor;
+  created_at: string;
+};

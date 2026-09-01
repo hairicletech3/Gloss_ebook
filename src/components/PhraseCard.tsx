@@ -1,11 +1,15 @@
 import { useLayoutEffect, useRef, useState } from 'react';
+import { HIGHLIGHT_COLORS } from '../lib/highlights';
+import type { HighlightColor } from '../lib/types';
 
 type Props = {
   anchor: DOMRect;
   source: string;
   translation: string | null;
+  failed: boolean;
   saved: boolean;
   onSave: () => void;
+  onHighlight: (color: HighlightColor) => void;
   onClose: () => void;
 };
 
@@ -16,7 +20,16 @@ const GAP = 10;
  * getBoundingClientRect() and misplaced it near the viewport edges. Measure
  * the card once it is laid out, then clamp on both axes.
  */
-export function PhraseCard({ anchor, source, translation, saved, onSave, onClose }: Props) {
+export function PhraseCard({
+  anchor,
+  source,
+  translation,
+  failed,
+  saved,
+  onSave,
+  onHighlight,
+  onClose,
+}: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
@@ -37,8 +50,8 @@ export function PhraseCard({ anchor, source, translation, saved, onSave, onClose
     top = Math.min(Math.max(GAP, top), Math.max(GAP, vh - height - GAP));
 
     setPos({ left, top });
-    // Re-measure when the translation lands and the card grows.
-  }, [anchor, translation]);
+    // Re-measure when the translation lands (or fails) and the card resizes.
+  }, [anchor, translation, failed]);
 
   return (
     <div
@@ -53,7 +66,22 @@ export function PhraseCard({ anchor, source, translation, saved, onSave, onClose
       }}
     >
       <div className="src">{source}</div>
-      <div className="out">{translation ?? '···'}</div>
+      <div className={'out' + (failed ? ' out-failed' : '')}>
+        {translation ?? (failed ? 'No translation available' : '···')}
+      </div>
+
+      <div className="swatches" role="group" aria-label="Highlight this passage">
+        {HIGHLIGHT_COLORS.map((c) => (
+          <button
+            key={c.id}
+            className={'swatch sw-' + c.id}
+            title={`Highlight — ${c.label}`}
+            aria-label={`Highlight — ${c.label}`}
+            onClick={() => onHighlight(c.id)}
+          />
+        ))}
+      </div>
+
       <div className="act">
         <button className="chip solid" onClick={onSave} disabled={!translation || saved}>
           {saved ? 'Kept' : 'Keep in margin'}

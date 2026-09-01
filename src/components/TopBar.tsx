@@ -7,7 +7,7 @@ type Props = {
   onTgtLang: (v: string) => void;
   glossesOn: boolean;
   onToggleGlosses: () => void;
-  hasBook: boolean;
+  marginOpen: boolean;
   onCloseBook: () => void;
   onToggleMargin: () => void;
   onSignOut: () => void;
@@ -20,7 +20,7 @@ export function TopBar({
   onTgtLang,
   glossesOn,
   onToggleGlosses,
-  hasBook,
+  marginOpen,
   onCloseBook,
   onToggleMargin,
   onSignOut,
@@ -55,11 +55,14 @@ export function TopBar({
       <button className="chip" aria-pressed={glossesOn} onClick={onToggleGlosses}>
         {glossesOn ? 'Glosses on' : 'Glosses off'}
       </button>
-      {hasBook && (
-        <button className="chip" onClick={onToggleMargin}>
-          Words
-        </button>
-      )}
+      <button
+        className="chip"
+        aria-pressed={marginOpen}
+        onClick={onToggleMargin}
+        title={marginOpen ? 'Hide the margin' : 'Show the margin'}
+      >
+        Notes
+      </button>
       <button className="chip" onClick={onSignOut} title="Sign out">
         ⤶
       </button>

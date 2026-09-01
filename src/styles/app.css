@@ -215,7 +215,12 @@ button.mark:hover {
 
 .w {
   position: relative;
-  display: inline-block;
+  /* Inline, not inline-block: an inline-block takes the full line-height as
+     its box, so a highlight band behind a word stood taller than the band
+     behind the spaces around it and the highlight came out striped. A word
+     never wraps inside itself, and position:relative still anchors the gloss
+     ::before, so inline costs nothing here. */
+  display: inline;
   cursor: pointer;
   border-radius: 2px;
   transition: background 0.12s;
@@ -281,6 +286,123 @@ button.mark:hover {
 .glosses-off .w[data-gloss] {
   background: transparent;
   box-shadow: inset 0 -1px 0 var(--rule);
+}
+
+/* ── highlights ────────────────────────────── */
+/* Painted behind the text, including the whitespace tokens between marked
+   words, so a highlight reads as one continuous band rather than stripes.
+   box-decoration-break keeps the band intact when it wraps a line. */
+.hl {
+  background: var(--hl-bg);
+  box-shadow: inset 0 -1px 0 var(--hl-line);
+  border-radius: 1px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  cursor: pointer;
+}
+.hl-yellow {
+  --hl-bg: #fbf0c4;
+  --hl-line: #d9b64e;
+}
+.hl-blue {
+  --hl-bg: #dce6f8;
+  --hl-line: #6f92cf;
+}
+.hl-green {
+  --hl-bg: #d9edda;
+  --hl-line: #6aa86e;
+}
+.hl-pink {
+  --hl-bg: #f9dde6;
+  --hl-line: #cf7396;
+}
+/* A highlight carrying a note gets a second, heavier rule so you can tell at
+   a glance which passages you actually wrote something against. */
+.hl-noted {
+  box-shadow: inset 0 -3px 0 var(--hl-line);
+}
+
+/* The note marker, sitting just after the passage it belongs to. Reading the
+   note is a hover (or focus) away; clicking opens the editor, same as
+   clicking the highlight itself. */
+.hl-pin {
+  position: relative;
+  display: inline-block;
+  margin-left: 2px;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1;
+  vertical-align: super;
+  color: var(--gold);
+  cursor: pointer;
+  user-select: none;
+}
+.hl-pin:hover {
+  color: var(--ink);
+}
+/* The hover preview is NOT a ::after on the pin: the sheet clips its overflow
+   so it can page without scrolling, which would slice the top off any note on
+   the first line. It renders at the app root as a fixed-position card
+   instead — see NotePeek. */
+.notepeek {
+  max-width: 34ch;
+  font-family: var(--body);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink);
+  white-space: pre-wrap;
+  pointer-events: none;
+}
+/* A gloss still wins the underline on a word that is both. */
+.w[data-gloss].hl {
+  box-shadow: inset 0 -1px 0 var(--lapis);
+}
+
+.swatches {
+  display: flex;
+  gap: 7px;
+  margin-top: 10px;
+}
+.swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  padding: 0;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.swatch:hover {
+  transform: scale(1.12);
+}
+.swatch.on {
+  box-shadow: 0 0 0 2px var(--page), 0 0 0 3.5px var(--ink-soft);
+}
+.sw-yellow {
+  background: #fbf0c4;
+}
+.sw-blue {
+  background: #dce6f8;
+}
+.sw-green {
+  background: #d9edda;
+}
+.sw-pink {
+  background: #f9dde6;
+}
+
+.note-input {
+  width: 100%;
+  margin-top: 10px;
+  font: inherit;
+  font-family: var(--body);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  resize: vertical;
 }
 
 ::selection {
@@ -563,6 +685,15 @@ button.mark:hover {
   min-height: 0;
   background: var(--paper);
 }
+/* Above the phone breakpoint the margin is a side panel, so hiding it means
+   taking it out of the flex row entirely — giving the width back to the
+   reading column. (On a phone it stays in the DOM and slides off-screen
+   instead; see the phone media query.) */
+@media (min-width: 681px) {
+  .margin:not(.open) {
+    display: none;
+  }
+}
 .margin-head {
   padding: 20px 20px 12px;
   display: flex;
@@ -583,6 +714,70 @@ button.mark:hover {
   font-size: 11px;
   color: var(--muted);
 }
+.margin-close {
+  align-self: center;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+.margin-close:hover {
+  color: var(--ink);
+  background: var(--page);
+}
+.margin-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 14px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.margin-tabs button {
+  flex: 1;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 7px 4px 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+.margin-tabs button:hover {
+  color: var(--ink-soft);
+}
+.margin-tabs button.on {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+
+/* The marked passage, shown with its own colour behind it so the Notes list
+   is scannable by colour the same way the page is. */
+.entry .hl-term {
+  background: var(--hl-bg);
+  box-shadow: inset 0 -1px 0 var(--hl-line);
+  border-radius: 2px;
+  padding: 1px 3px;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.entry .note-body {
+  font-family: var(--body);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  margin-top: 6px;
+  padding-left: 8px;
+  border-left: 2px solid var(--rule);
+}
+
 .margin-list {
   flex: 1 1 auto;
   overflow-y: auto;
@@ -686,6 +881,30 @@ button.mark:hover {
   padding: 13px 15px;
   box-shadow: 0 14px 34px -16px rgba(26, 28, 33, 0.55);
 }
+/* Hangs off the card's top-right corner rather than sitting in the action
+   row, so it never competes with Save/Remove for the same click target. */
+.card-close {
+  position: absolute;
+  top: -11px;
+  right: -11px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  background: var(--page);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1;
+  padding: 0;
+  box-shadow: 0 3px 8px -4px rgba(26, 28, 33, 0.6);
+}
+.card-close:hover {
+  background: var(--ink);
+  color: var(--page);
+}
 .card .src {
   font-size: 14.5px;
   line-height: 1.5;
@@ -700,6 +919,11 @@ button.mark:hover {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--rule);
+}
+.card .out-failed {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
 }
 .card .act {
   margin-top: 11px;
@@ -895,6 +1119,11 @@ button.mark:hover {
   }
   .langpair .lbl {
     display: none;
+  }
+  /* The margin is a bottom sheet here, so the chevron points down (dismiss)
+     rather than right (collapse to the side). */
+  .margin-close {
+    transform: rotate(90deg);
   }
 }
 @media (prefers-reduced-motion: reduce) {

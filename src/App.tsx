@@ -9,7 +9,21 @@ import { parsePage } from './lib/parsePage';
 import { useScreenChunks } from './lib/useScreenChunks';
 import { sentenceAt, tokenize } from './lib/tokenize';
 import { segmenterLocale } from './lib/languages';
-import type { Book, BookMeta, Word, WordKind } from './lib/types';
+import {
+  listHighlights,
+  saveHighlight,
+  updateHighlightNote,
+  deleteHighlight,
+} from './lib/highlights';
+import { anchorsFromSelection, tokensForHighlights } from './lib/highlightAnchor';
+import type {
+  Book,
+  BookMeta,
+  Highlight,
+  HighlightColor,
+  Word,
+  WordKind,
+} from './lib/types';
 
 import { Auth } from './components/Auth';
 import { TopBar } from './components/TopBar';
@@ -18,13 +32,23 @@ import { Page } from './components/Page';
 import { Pager } from './components/Pager';
 import { Margin } from './components/Margin';
 import { PhraseCard } from './components/PhraseCard';
+import { NoteCard } from './components/NoteCard';
+import { NotePeek } from './components/NotePeek';
 import { useToast } from './components/Toast';
 
 type LastWord = { key: string; term: string; context: string };
-type Phrase = { anchor: DOMRect; source: string; translation: string | null };
+type Phrase = {
+  anchor: DOMRect;
+  source: string;
+  translation: string | null;
+  /** Translation came back empty or errored. The card stays up regardless —
+      highlighting a passage must not depend on the translator working. */
+  failed: boolean;
+};
 
 const LS_SRC = 'gloss.srcLang';
 const LS_TGT = 'gloss.tgtLang';
+const LS_MARGIN = 'gloss.marginOpen';
 /** Stable empty-array reference — `parsed?.paragraphs ?? []` would otherwise
     hand useScreenChunks a new array every render whenever no book is open,
     which loops its measurement effect forever. */
@@ -54,10 +78,22 @@ export default function App() {
   const [lastWord, setLastWord] = useState<LastWord | null>(null);
   const [phrase, setPhrase] = useState<Phrase | null>(null);
 
+  const [highlights, setHighlights] = useState<Highlight[]>([]);
+  /** The highlight whose note card is open, plus where to anchor that card. */
+  const [editing, setEditing] = useState<{ id: string; anchor: DOMRect } | null>(null);
+  /** Note being previewed by hovering its marker in the page. */
+  const [peek, setPeek] = useState<{ note: string; anchor: DOMRect } | null>(null);
+
   const [srcLang, setSrcLang] = useState(() => localStorage.getItem(LS_SRC) || 'auto');
   const [tgtLang, setTgtLang] = useState(() => localStorage.getItem(LS_TGT) || 'km');
   const [glossesOn, setGlossesOn] = useState(true);
-  const [marginOpen, setMarginOpen] = useState(false);
+  /* Open by default where there's room for a side panel, closed on a phone
+     where it covers the page as a bottom sheet. Remembered either way. */
+  const [marginOpen, setMarginOpen] = useState(() => {
+    const saved = localStorage.getItem(LS_MARGIN);
+    if (saved !== null) return saved === '1';
+    return window.innerWidth > 680;
+  });
 
   const [importing, setImporting] = useState(false);
   const [status, setStatus] = useState('');
@@ -88,12 +124,16 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(LS_TGT, tgtLang);
   }, [tgtLang]);
+  useEffect(() => {
+    localStorage.setItem(LS_MARGIN, marginOpen ? '1' : '0');
+  }, [marginOpen]);
 
   /* ── library + margin load ─────────────────────────────────── */
   useEffect(() => {
     if (!session) {
       setBooks([]);
       setWords([]);
+      setHighlights([]);
       setBook(null);
       return;
     }
@@ -140,6 +180,20 @@ export default function App() {
     setChunkIndex((ci) => (ci < 0 ? ci : Math.min(ci, Math.max(0, chunks.length - 1))));
   }, [chunks.length]);
 
+  /* Only this page's highlights need painting, but the margin lists them all. */
+  const pageHighlights = useMemo(
+    () => highlights.filter((h) => h.page === page),
+    [highlights, page],
+  );
+  const highlightedTokens = useMemo(
+    () => (parsed ? tokensForHighlights(parsed, pageHighlights) : new Map()),
+    [parsed, pageHighlights],
+  );
+  const editingHighlight = useMemo(
+    () => (editing ? highlights.find((h) => h.id === editing.id) ?? null : null),
+    [editing, highlights],
+  );
+
   const bookWords = useMemo(
     () => (book ? words.filter((w) => w.book_id === book.id) : words),
     [words, book],
@@ -174,7 +228,27 @@ export default function App() {
 
   useEffect(() => {
     if (sheetRef.current) sheetRef.current.scrollTop = 0;
+    // The markers under the pointer are gone after a turn, so no pointerout
+    // is coming to close a preview that's still open.
+    setPeek(null);
   }, [page, chunkIndex, book]);
+
+  /* Highlights are per-book and can be many, so they load with the book
+     rather than up front with the library. */
+  useEffect(() => {
+    if (!book) {
+      setHighlights([]);
+      return;
+    }
+    let alive = true;
+    const id = book.id;
+    listHighlights(id)
+      .then((h) => alive && setHighlights(h))
+      .catch(() => alive && toast('Could not load your highlights'));
+    return () => {
+      alive = false;
+    };
+  }, [book, toast]);
 
   /* Persist the reading position, debounced. Opening a book resumes here. */
   useEffect(() => {
@@ -315,16 +389,90 @@ export default function App() {
 
   const startPhrase = useCallback(
     async (text: string, anchor: DOMRect) => {
-      setPhrase({ anchor, source: text, translation: null });
+      setPhrase({ anchor, source: text, translation: null, failed: false });
       try {
         const out = await translate({ text, from: srcLang, to: tgtLang, mode: 'phrase' });
         setPhrase((p) => (p && p.source === text ? { ...p, translation: out } : p));
       } catch (e) {
         toast(e instanceof Error ? e.message : 'Translation failed');
-        setPhrase(null);
+        // Leave the card up: its highlight swatches are the only pointer-driven
+        // way to mark a passage, and they must survive a dead translator.
+        setPhrase((p) => (p && p.source === text ? { ...p, failed: true } : p));
       }
     },
     [srcLang, tgtLang, toast],
+  );
+
+  /* ── highlights ────────────────────────────────────────────── */
+
+  /** Marks whatever is selected right now. One row per paragraph touched. */
+  const highlightSelection = useCallback(
+    async (color: HighlightColor) => {
+      if (!session || !book || !parsed) return;
+      const sheet = sheetRef.current;
+      const sel = window.getSelection();
+      if (!sheet || !sel || sel.rangeCount === 0 || !sel.toString().trim()) return;
+
+      const anchors = anchorsFromSelection(sel.getRangeAt(0), parsed, sheet, page);
+      if (!anchors.length) return;
+
+      sel.removeAllRanges();
+      setPhrase(null);
+      try {
+        const saved = await Promise.all(
+          anchors.map((a) =>
+            saveHighlight({ ...a, book_id: book.id, note: null, color }, session.user.id),
+          ),
+        );
+        setHighlights((hs) => [...hs, ...saved]);
+      } catch {
+        toast('Could not save that highlight');
+      }
+    },
+    [session, book, parsed, page, toast],
+  );
+
+  const changeHighlightColor = useCallback(
+    async (id: string, color: HighlightColor) => {
+      const before = highlights;
+      setHighlights((hs) => hs.map((h) => (h.id === id ? { ...h, color } : h)));
+      const { error } = await supabase.from('highlights').update({ color }).eq('id', id);
+      if (error) {
+        setHighlights(before);
+        toast('Could not change that colour');
+      }
+    },
+    [highlights, toast],
+  );
+
+  const saveNote = useCallback(
+    async (id: string, note: string | null) => {
+      const before = highlights;
+      setHighlights((hs) => hs.map((h) => (h.id === id ? { ...h, note } : h)));
+      try {
+        await updateHighlightNote(id, note);
+        toast(note ? 'Note saved' : 'Note cleared');
+      } catch {
+        setHighlights(before);
+        toast('Could not save that note');
+      }
+    },
+    [highlights, toast],
+  );
+
+  const removeHighlight = useCallback(
+    async (id: string) => {
+      const before = highlights;
+      setHighlights((hs) => hs.filter((h) => h.id !== id));
+      setEditing((e) => (e?.id === id ? null : e));
+      try {
+        await deleteHighlight(id);
+      } catch {
+        setHighlights(before);
+        toast('Could not remove that highlight');
+      }
+    },
+    [highlights, toast],
   );
 
   /* A selection spanning more than one word-like segment is a phrase. Testing
@@ -393,9 +541,24 @@ export default function App() {
         startPhrase(picked, sel.getRangeAt(0).getBoundingClientRect());
         return;
       }
-      const el = (e.target as HTMLElement).closest<HTMLElement>('.w');
+
+      /* A plain click on an existing highlight opens its note. Glossing a
+         word that happens to sit inside a highlight is still reachable by
+         selecting it, which takes the branch above / below instead. */
+      const target = e.target as HTMLElement;
+      if (!picked) {
+        const marked = target.closest<HTMLElement>('[data-hl]');
+        if (marked?.dataset.hl) {
+          setPhrase(null);
+          setEditing({ id: marked.dataset.hl, anchor: marked.getBoundingClientRect() });
+          return;
+        }
+      }
+
+      const el = target.closest<HTMLElement>('.w');
       if (!el?.dataset.key) return;
       setPhrase(null);
+      setEditing(null);
       activateWord(el.dataset.key);
     },
     [isPhrase, startPhrase, activateWord],
@@ -414,6 +577,33 @@ export default function App() {
     },
     [activateWord],
   );
+
+  /* Clicking anywhere outside the open note card dismisses it. Registered
+     only while the card is up, so the very click that opened it (already
+     finished by the time this effect runs) can't close it again. */
+  useEffect(() => {
+    if (!editing) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest('.notecard')) return;
+      setEditing(null);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [editing]);
+
+  /* Hovering a note marker previews the note. Delegated from the sheet so it
+     survives the page re-rendering underneath it. */
+  const onSheetPointerOver = useCallback((e: React.PointerEvent) => {
+    const pin = (e.target as HTMLElement).closest<HTMLElement>('.hl-pin');
+    if (!pin?.dataset.note) return;
+    setPeek({ note: pin.dataset.note, anchor: pin.getBoundingClientRect() });
+  }, []);
+
+  const onSheetPointerOut = useCallback((e: React.PointerEvent) => {
+    const pin = (e.target as HTMLElement).closest<HTMLElement>('.hl-pin');
+    if (pin) setPeek(null);
+  }, []);
 
   /* Swipe left/right turns the page on touch devices, alongside the Pager
      arrows. A long-press-to-select gesture stays put (native selection
@@ -477,16 +667,20 @@ export default function App() {
       if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
       if (e.key === 'Escape') {
         setPhrase(null);
+        setEditing(null);
         return;
       }
       if (!book || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'ArrowRight') go(1);
       else if (e.key === 'ArrowLeft') go(-1);
       else if (e.key === 's' || e.key === 'S') keepLastWord();
+      // H marks the current selection, so a single word can be highlighted
+      // too — the card's swatches only appear for multi-word selections.
+      else if (e.key === 'h' || e.key === 'H') void highlightSelection('yellow');
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [book, go, keepLastWord]);
+  }, [book, go, keepLastWord, highlightSelection]);
 
   /* ── drag and drop ─────────────────────────────────────────── */
   useEffect(() => {
@@ -555,7 +749,7 @@ export default function App() {
         onTgtLang={setTgtLang}
         glossesOn={glossesOn}
         onToggleGlosses={() => setGlossesOn((v) => !v)}
-        hasBook={Boolean(book)}
+        marginOpen={marginOpen}
         onCloseBook={() => setBook(null)}
         onToggleMargin={() => setMarginOpen((v) => !v)}
         onSignOut={() => void supabase.auth.signOut()}
@@ -583,6 +777,8 @@ export default function App() {
             onFocus={onSheetFocus}
             onTouchStart={onSheetTouchStart}
             onTouchEnd={onSheetTouchEnd}
+            onPointerOver={onSheetPointerOver}
+            onPointerOut={onSheetPointerOut}
           >
             {book && parsed ? (
               <Page
@@ -593,6 +789,7 @@ export default function App() {
                 savedTerms={savedTerms}
                 turnDir={turnDir}
                 range={[currentChunk.start, currentChunk.end]}
+                highlighted={highlightedTokens}
               />
             ) : (
               <Shelf
@@ -619,13 +816,19 @@ export default function App() {
 
         <Margin
           words={bookWords}
+          highlights={highlights}
           open={marginOpen}
           onJump={(p) => {
             setPage(p);
             setChunkIndex(0);
-            setMarginOpen(false);
+            // On a phone the margin covers the page, so jumping has to
+            // dismiss it. On a wider screen it sits beside the text — closing
+            // it there would just take the list away mid-use.
+            if (window.innerWidth <= 680) setMarginOpen(false);
           }}
           onDelete={removeWord}
+          onDeleteHighlight={removeHighlight}
+          onClose={() => setMarginOpen(false)}
         />
       </div>
 
@@ -634,6 +837,7 @@ export default function App() {
           anchor={phrase.anchor}
           source={phrase.source}
           translation={phrase.translation}
+          failed={phrase.failed}
           saved={phraseSaved}
           onSave={() => {
             if (phrase.translation) {
@@ -641,7 +845,21 @@ export default function App() {
               setPhrase(null);
             }
           }}
+          onHighlight={(color) => void highlightSelection(color)}
           onClose={() => setPhrase(null)}
+        />
+      )}
+
+      {peek && !editing && <NotePeek anchor={peek.anchor} note={peek.note} />}
+
+      {editing && editingHighlight && (
+        <NoteCard
+          anchor={editing.anchor}
+          highlight={editingHighlight}
+          onSaveNote={(note) => void saveNote(editingHighlight.id, note)}
+          onColor={(color) => void changeHighlightColor(editingHighlight.id, color)}
+          onDelete={() => void removeHighlight(editingHighlight.id)}
+          onClose={() => setEditing(null)}
         />
       )}
 
