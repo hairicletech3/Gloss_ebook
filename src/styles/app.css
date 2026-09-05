@@ -5,6 +5,10 @@ html,
 body,
 #root {
   height: 100%;
+  /* Mobile Safari counts its retracting toolbars into 100vh but not into the
+     area you can actually see, so a sheet sized in vh spends most of its life
+     partly under the address bar. dvh is that visible height. */
+  height: 100dvh;
 }
 body {
   margin: 0;
@@ -12,6 +16,21 @@ body {
   color: var(--ink);
   font-family: var(--body);
   -webkit-font-smoothing: antialiased;
+  /* Safari inflates text in landscape on its own, which would silently
+     invalidate the measured page split — see useScreenChunks. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* The reader turns pages instead of scrolling, so a rubber-band bounce or a
+     pull-to-refresh during a swipe is only ever noise. */
+  overscroll-behavior: none;
+}
+/* iOS paints a grey box over anything tapped. Every control here already has
+   its own press state, so the box is just a second, uglier one. */
+button,
+.w,
+.hl,
+.hl-pin {
+  -webkit-tap-highlight-color: transparent;
 }
 #root {
   display: flex;
@@ -35,6 +54,10 @@ button {
   align-items: center;
   gap: 18px;
   padding: 0 20px;
+  /* In landscape the notch eats into one side of the viewport; max() keeps the
+     normal padding everywhere it doesn't. */
+  padding-left: max(20px, env(safe-area-inset-left));
+  padding-right: max(20px, env(safe-area-inset-right));
   height: 54px;
   border-bottom: 1px solid var(--rule);
   background: var(--paper);
@@ -102,29 +125,6 @@ button.mark:hover {
   opacity: 0.5;
 }
 
-.langpair {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--mono);
-  font-size: 11.5px;
-}
-.langpair select {
-  font: inherit;
-  font-family: var(--mono);
-  font-size: 11.5px;
-  border: 1px solid var(--rule);
-  background: var(--page);
-  border-radius: 6px;
-  padding: 6px 8px;
-  color: var(--ink);
-  cursor: pointer;
-}
-.langpair .arrow {
-  color: var(--lapis);
-  font-size: 13px;
-}
-
 /* ── layout ────────────────────────────────── */
 .stage {
   flex: 1 1 auto;
@@ -151,6 +151,11 @@ button.mark:hover {
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03), 0 12px 28px -22px rgba(26, 28, 33, 0.5);
   scroll-behavior: smooth;
   perspective: 1600px;
+  /* A horizontal drag here is a page turn, so tell the browser not to claim
+     it for a back-navigation or an overscroll. Vertical is still the
+     browser's, for the rare chunk that has to scroll. */
+  touch-action: pan-y pinch-zoom;
+  overscroll-behavior: contain;
 }
 
 /* ── the reading text + the gloss ──────────── */
@@ -160,8 +165,10 @@ button.mark:hover {
 .text {
   max-width: 62ch;
   margin: 0 auto;
-  /* Both set on <html> from the reader settings; useScreenChunks re-measures
-     the page whenever they change. */
+  /* All three set on <html> from the reader settings; useScreenChunks
+     re-measures the page whenever they change — including after a web font
+     finishes loading and the metrics shift under it. */
+  font-family: var(--reading-font);
   font-size: var(--reading-size);
   font-weight: 400;
   line-height: var(--reading-leading);
@@ -227,8 +234,14 @@ button.mark:hover {
   border-radius: 2px;
   transition: background 0.12s;
 }
-.w:hover {
-  background: var(--lapis-wash);
+/* Only where a pointer exists to hover with. Mobile Safari latches :hover
+   onto the last element tapped and holds it there until something else is
+   tapped, so on a touchscreen this would light up a word you left behind
+   several pages ago. The touch equivalent is .w:active, further down. */
+@media (hover: hover) {
+  .w:hover {
+    background: var(--lapis-wash);
+  }
 }
 
 .w[data-gloss]::before {
@@ -252,7 +265,6 @@ button.mark:hover {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.w[data-gloss]:hover::before,
 .w[data-gloss]:focus-visible::before {
   max-width: none;
   overflow: visible;
@@ -261,8 +273,30 @@ button.mark:hover {
   border-radius: 2px;
   z-index: 6;
 }
+@media (hover: hover) {
+  .w[data-gloss]:hover::before {
+    max-width: none;
+    overflow: visible;
+    background: var(--page);
+    box-shadow: 0 0 0 3px var(--page);
+    border-radius: 2px;
+    z-index: 6;
+  }
+}
 .w[data-gloss]:hover,
-.w[data-gloss]:focus-visible {
+.w[data-gloss]:focus-visible,
+.w.active[data-gloss] {
+  z-index: 6;
+}
+/* Hover is the pointer's way of asking for the whole reading; a tap is the
+   touchscreen's. The word App last glossed carries .active, so a long Khmer
+   reading of a French word is legible on an iPhone too. */
+.w.active[data-gloss]::before {
+  max-width: none;
+  overflow: visible;
+  background: var(--page);
+  box-shadow: 0 0 0 3px var(--page);
+  border-radius: 2px;
   z-index: 6;
 }
 .w[data-gloss] {
@@ -280,14 +314,6 @@ button.mark:hover {
   content: '···';
   color: var(--muted);
   letter-spacing: 0.1em;
-}
-
-.glosses-off .w[data-gloss]::before {
-  display: none;
-}
-.glosses-off .w[data-gloss] {
-  background: transparent;
-  box-shadow: inset 0 -1px 0 var(--rule);
 }
 
 /* ── highlights ────────────────────────────── */
@@ -686,6 +712,38 @@ button.mark:hover {
   border-radius: 2px;
   transition: width 0.25s;
 }
+/* The visible half of the page turn. Arrow keys and the swipe do the same
+   thing; neither is discoverable on a device with no keyboard. */
+.pager .turn {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-size: 18px;
+  line-height: 1;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.pager .turn:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+.pager .turn:not(:disabled):active {
+  background: var(--select);
+  border-color: var(--ink-soft);
+  color: var(--ink);
+}
+.pageno {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
 .doctitle {
   max-width: 26ch;
   overflow: hidden;
@@ -695,10 +753,29 @@ button.mark:hover {
 }
 .spacer-b {
   height: 24px;
+  /* On an iPhone the home indicator sits in this strip; without the inset the
+     pager's buttons end up underneath it. */
+  height: calc(24px + env(safe-area-inset-bottom));
   flex: 0 0 auto;
 }
 
 /* ── margin (saved words) ──────────────────── */
+/* Inert above the phone breakpoint, where the margin is a panel beside the
+   page rather than a sheet over it — see the phone media query. */
+.margin-scrim {
+  display: none;
+  position: fixed;
+  /* Below the bar, not over it: the chip that opened this sheet is up there,
+     and it is the obvious thing to reach for to close it again. */
+  inset: 54px 0 0 0;
+  z-index: 49;
+  border: none;
+  padding: 0;
+  background: rgba(26, 28, 33, 0.28);
+  -webkit-backdrop-filter: blur(1px);
+  backdrop-filter: blur(1px);
+}
+
 .margin {
   flex: 0 0 292px;
   border-left: 1px solid var(--rule);
@@ -972,10 +1049,149 @@ button.mark:hover {
   padding: 0 10px;
 }
 
+/* ── reading settings ──────────────────────── */
+/* Anchored under its chip on a wide screen; the phone query below turns it
+   into a bottom sheet, which is the only place a thumb can reach it. */
+.settings {
+  position: fixed;
+  z-index: 70;
+  top: 64px;
+  right: max(16px, env(safe-area-inset-right));
+  width: 272px;
+  max-height: min(78dvh, 620px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--page);
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  padding: 14px 16px 12px;
+  box-shadow: 0 18px 40px -18px rgba(26, 28, 33, 0.55);
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+}
+.settings-row + .settings-row {
+  border-top: 1px solid var(--rule);
+}
+.settings-label {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft);
+}
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper);
+}
+.stepper button {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink);
+  font-size: 17px;
+  line-height: 1;
+}
+.stepper button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.stepper button:not(:disabled):active {
+  background: var(--select);
+}
+.stepper-value {
+  min-width: 54px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+.settings-themes,
+.settings-fonts {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 9px;
+}
+
+.font-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.font-picker button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 7px 11px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  text-align: left;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.font-picker button.on {
+  border-color: var(--ink);
+  background: var(--page);
+  color: var(--ink);
+}
+.font-picker .font-name {
+  font-size: 15px;
+  line-height: 1.25;
+  /* Inherits the button's face — that is the whole point of the row. */
+}
+.font-picker .font-note {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.font-picker button.on .font-note {
+  color: var(--ink-soft);
+}
+.theme-picker {
+  display: flex;
+  gap: 6px;
+}
+.theme-picker button {
+  flex: 1;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft);
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.theme-picker button.on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--page);
+}
+
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 24px;
+  bottom: calc(24px + env(safe-area-inset-bottom));
   transform: translate(-50%, 14px);
   background: var(--ink);
   color: var(--page);
@@ -1101,12 +1317,22 @@ button.mark:hover {
   color: var(--muted);
 }
 
-/* ── tablet (iPad portrait/landscape) ────────
+/* ══ responsive ═════════════════════════════
+   Two axes, deliberately kept apart. Width decides the LAYOUT — where the
+   margin lives, how much padding the sheet gets. The input device decides
+   the CONTROLS — how big a target has to be, and whether hover means
+   anything. An 11-inch iPad in landscape is wider than most laptops but is
+   still driven by a finger, so keying target sizes off width would miss it
+   entirely; a touchscreen laptop is the same mistake in reverse. */
+
+/* ── tablet (iPad, both orientations) ────────
    Wide enough to keep the margin as a real side panel, not a bottom sheet —
-   just narrower, so the reading column still has room to breathe. */
-@media (min-width: 681px) and (max-width: 1024px) {
+   just narrower, so the reading column still has room to breathe. The upper
+   bound is the 11-inch iPad in landscape (1194 CSS px); the 12.9-inch
+   reports 1366 and gets the desktop layout, which it has the width for. */
+@media (min-width: 681px) and (max-width: 1194px) {
   .margin {
-    flex-basis: 240px;
+    flex-basis: 248px;
   }
   .reader-col {
     padding: 20px 16px 0;
@@ -1116,10 +1342,47 @@ button.mark:hover {
   }
   .bar {
     gap: 12px;
-    padding: 0 14px;
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
   }
   .library-grid {
     grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  }
+  .doctitle {
+    max-width: 18ch;
+  }
+}
+
+/* ── tablet, portrait ────────────────────────
+   An iPad in portrait is 820px wide. Take 292px of that for a panel and the
+   measure drops to about 38 characters, which is where a serif at reading
+   size stops being comfortable. So above the phone breakpoint but below a
+   landscape tablet, the margin floats over the page as a right-hand drawer
+   instead — full width for the text, full width for the list, neither
+   compromised. App.tsx keys off this same 834px bound to decide the default
+   and to dismiss the drawer after a jump. */
+@media (min-width: 681px) and (max-width: 834px) {
+  /* Overrides the "take it out of the flex row" rule above: a drawer has to
+     stay in the DOM to slide, and it is out of flow anyway. */
+  .margin:not(.open) {
+    display: flex;
+  }
+  .margin {
+    position: fixed;
+    inset: 54px 0 0 auto;
+    width: min(344px, 82vw);
+    z-index: 50;
+    border-left: 1px solid var(--ink);
+    transform: translateX(100%);
+    transition: transform 0.25s;
+    box-shadow: -18px 0 40px -26px rgba(0, 0, 0, 0.5);
+    padding-right: env(safe-area-inset-right);
+  }
+  .margin.open {
+    transform: translateX(0);
+  }
+  .margin-scrim {
+    display: block;
   }
 }
 
@@ -1128,39 +1391,416 @@ button.mark:hover {
   .margin {
     position: fixed;
     inset: auto 0 0 0;
-    height: 52vh;
+    /* dvh, not vh: with vh the bottom of the sheet sits behind Safari's
+       toolbar for as long as the toolbar is out. */
+    height: min(62dvh, 520px);
     z-index: 50;
     border-left: none;
     border-top: 1px solid var(--ink);
+    border-radius: 12px 12px 0 0;
     transform: translateY(100%);
     transition: transform 0.25s;
     box-shadow: 0 -12px 30px -20px rgba(0, 0, 0, 0.4);
+    padding-bottom: env(safe-area-inset-bottom);
   }
   .margin.open {
     transform: translateY(0);
   }
-  .reader-col {
-    padding: 14px 12px 0;
+  /* The grab handle every bottom sheet on this platform has. It is the whole
+     signal that the thing can be dismissed. */
+  .margin::before {
+    content: '';
+    position: absolute;
+    top: 7px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 38px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--rule);
   }
-  .sheet {
-    padding: 34px 20px 44px;
-  }
-  /* The phone's smaller reading size is the default in readerPrefs now, so
-     it stays adjustable instead of being pinned by this breakpoint. */
-  .bar {
-    gap: 10px;
-    padding: 0 12px;
-    overflow-x: auto;
-  }
-  .langpair .lbl {
-    display: none;
+  .margin-head {
+    padding-top: 20px;
   }
   /* The margin is a bottom sheet here, so the chevron points down (dismiss)
      rather than right (collapse to the side). */
   .margin-close {
     transform: rotate(90deg);
   }
+  .margin-scrim {
+    display: block;
+  }
+
+  .reader-col {
+    padding: 14px 12px 0;
+  }
+  .sheet {
+    padding: 30px 18px 40px;
+  }
+  /* The phone's smaller reading size is the default in readerPrefs now, so
+     it stays adjustable instead of being pinned by this breakpoint. */
+
+  .bar {
+    gap: 10px;
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+    /* The chips do not fit across 390px. Scroll the row rather than shrink
+       them below a thumb's worth of target — and hide the scrollbar, which
+       here would be a smear across the controls. */
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .bar::-webkit-scrollbar {
+    display: none;
+  }
+  .bar .chip,
+  .bar .mark {
+    flex: 0 0 auto;
+  }
+
+  /* Title and page count both fight the progress track for one short row,
+     and the title is already showing in the bar. */
+  .doctitle {
+    display: none;
+  }
+  .pager {
+    gap: 10px;
+    padding: 0 12px;
+  }
+
+  .library-grid {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 18px 14px;
+  }
+  .library-head h2 {
+    font-size: 19px;
+  }
+
+  /* A card anchored to a selection still has to fit a 390px viewport with
+     its 10px gutters — see the clamping in PhraseCard. */
+  .card {
+    max-width: min(310px, calc(100vw - 24px));
+  }
+
+  /* Reachable by thumb: the panel becomes a sheet, like the margin. */
+  .settings {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    border-radius: 12px 12px 0 0;
+    padding: 16px 18px calc(14px + env(safe-area-inset-bottom));
+  }
+  .settings .card-close {
+    top: -15px;
+    right: 14px;
+  }
 }
+
+/* ── no hover ────────────────────────────────
+   Safari keeps :hover applied to whatever was tapped last, so a hover-only
+   affordance does not merely fail on a touchscreen — it sticks, and the page
+   fills up with words and covers lit from taps minutes ago. Each one is
+   turned off here and given a press state instead, which ends when the
+   finger lifts. */
+@media (hover: none) {
+  /* .w:hover and the gloss it expands are gated at their source above; this
+     is the press state that stands in for them. Reading a long gloss in full
+     is .w.active — App marks the word it glossed last. */
+  .w:active {
+    background: var(--lapis-wash);
+  }
+
+  button.mark:hover {
+    color: var(--ink);
+  }
+  .chip:hover:not(:disabled) {
+    border-color: var(--rule);
+  }
+  .chip.solid:hover:not(:disabled) {
+    background: var(--ink);
+    border-color: var(--ink);
+  }
+  .chip:active:not(:disabled) {
+    border-color: var(--ink-soft);
+    background: var(--select);
+  }
+  .chip.solid:active:not(:disabled) {
+    background: var(--ink-hover);
+    color: var(--page);
+  }
+
+  .book-cover:hover {
+    transform: none;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08), 0 10px 18px -12px rgba(26, 28, 33, 0.55);
+  }
+  .book-cover:active {
+    transform: scale(0.97);
+  }
+  .book-title:hover {
+    color: var(--ink);
+  }
+  .book-title:active {
+    color: var(--lapis);
+  }
+  .book-del:hover {
+    color: var(--ink-soft);
+    background: var(--scrim);
+  }
+  .book-del:active {
+    color: var(--danger);
+    background: var(--page);
+  }
+  .ghost-add:hover {
+    color: var(--muted);
+    background: none;
+    transform: none;
+  }
+  .ghost-add:active {
+    color: var(--lapis);
+    background: var(--lapis-wash);
+  }
+
+  .swatch:hover {
+    transform: none;
+  }
+  .swatch:active {
+    transform: scale(1.14);
+  }
+  .card-close:hover {
+    background: var(--page);
+    color: var(--ink);
+  }
+  .card-close:active {
+    background: var(--ink);
+    color: var(--page);
+  }
+
+  .entry:hover {
+    background: none;
+  }
+  .entry:active {
+    background: var(--page);
+  }
+  .entry .term:hover {
+    color: inherit;
+  }
+  .entry .term:active {
+    color: var(--lapis);
+  }
+  .entry .del:hover {
+    color: var(--muted);
+    background: none;
+  }
+  .entry .del:active {
+    color: var(--danger);
+    background: var(--page);
+  }
+  .ctx-link:hover {
+    color: var(--muted);
+  }
+  .ctx-link:active {
+    color: var(--lapis);
+  }
+  .margin-close:hover {
+    color: var(--muted);
+    background: none;
+  }
+  .margin-close:active {
+    color: var(--ink);
+    background: var(--page);
+  }
+  .margin-tabs button:hover {
+    color: var(--muted);
+  }
+  .margin-tabs button.on {
+    color: var(--ink);
+  }
+  .hl-pin:hover {
+    color: var(--gold);
+  }
+  .hl-pin:active {
+    color: var(--ink);
+  }
+  .auth-eye:hover,
+  .auth-switch:hover {
+    color: var(--muted);
+  }
+}
+
+/* ── coarse pointer ──────────────────────────
+   A fingertip covers roughly 44px; a mouse cursor covers about one. Every
+   control in here was sized for the cursor. Nothing changes for the mouse —
+   a laptop keeps the compact controls even in a phone-narrow window. */
+@media (pointer: coarse) {
+  .chip {
+    height: 40px;
+    padding: 0 15px;
+    font-size: 12px;
+  }
+  .card .act .chip {
+    height: 36px;
+    padding: 0 14px;
+    font-size: 11.5px;
+  }
+  .auth-box .chip {
+    height: 46px;
+  }
+
+  /* Safari zooms the page in whenever a form control below 16px takes focus,
+     and never zooms back out afterwards. 16px is the entire fix. */
+  .note-input,
+  .auth-box input {
+    font-size: 16px;
+  }
+  .auth-box input {
+    padding: 12px 14px;
+  }
+  .auth-password input {
+    padding-right: 46px;
+  }
+  .auth-eye {
+    width: 44px;
+  }
+  .auth-switch {
+    padding: 12px 0;
+    font-size: 12px;
+  }
+
+  .pager {
+    height: 56px;
+    gap: 12px;
+  }
+  .pager .turn {
+    width: 44px;
+    height: 44px;
+    font-size: 23px;
+  }
+
+  .margin-close {
+    width: 44px;
+    height: 44px;
+    font-size: 24px;
+  }
+  .margin-tabs button {
+    padding: 13px 4px 14px;
+    font-size: 12px;
+  }
+  .entry {
+    padding: 14px 14px 14px 18px;
+  }
+  .entry .term {
+    padding: 3px 0;
+    font-size: 16px;
+  }
+  .entry .del {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 19px;
+  }
+  .ctx-link {
+    padding: 6px 0;
+    font-size: 11px;
+  }
+
+  .book-del {
+    top: 5px;
+    right: 5px;
+    width: 32px;
+    height: 32px;
+    font-size: 17px;
+  }
+  .book-title {
+    padding: 4px 0;
+    font-size: 14px;
+  }
+
+  .swatches {
+    gap: 10px;
+  }
+  .swatch {
+    width: 30px;
+    height: 30px;
+  }
+  .card-close {
+    top: -15px;
+    right: -15px;
+    width: 34px;
+    height: 34px;
+    font-size: 19px;
+  }
+
+  .stepper button {
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+  }
+  .theme-picker button {
+    height: 42px;
+    font-size: 12px;
+  }
+  .font-picker button {
+    padding: 9px 12px;
+  }
+  .font-picker .font-note {
+    font-size: 10.5px;
+  }
+
+  /* The note marker is a 10px glyph — the smallest target in the app, and the
+     only route from a marked passage to its note. Grow the hit area with a
+     pseudo-element rather than padding: padding would change the line box,
+     and the page split is measured off that. */
+  .hl-pin::after {
+    content: '';
+    position: absolute;
+    inset: -9px -4px;
+  }
+}
+
+/* ── phone, landscape ────────────────────────
+   Roughly 320px of height for everything. The chrome has to give most of it
+   back to the page or there is nothing left to read. */
+@media (max-height: 480px) and (orientation: landscape) {
+  .bar {
+    height: 46px;
+  }
+  .reader-col {
+    padding: 8px 12px 0;
+  }
+  .sheet {
+    padding: 18px clamp(16px, 5vw, 40px) 22px;
+  }
+  .pager {
+    height: 40px;
+  }
+  .spacer-b {
+    height: calc(8px + env(safe-area-inset-bottom));
+  }
+  .margin {
+    height: 88dvh;
+  }
+  /* Tracks the shorter bar above. */
+  .margin-scrim {
+    top: 46px;
+  }
+  .settings {
+    top: 52px;
+    right: max(16px, env(safe-area-inset-right));
+    bottom: auto;
+    left: auto;
+    width: 272px;
+    border-radius: 6px;
+    padding: 14px 16px 12px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;

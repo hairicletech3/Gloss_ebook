@@ -1,12 +1,4 @@
-import { SOURCE_LANGS, TARGET_LANGS } from '../lib/languages';
-
 type Props = {
-  srcLang: string;
-  tgtLang: string;
-  onSrcLang: (v: string) => void;
-  onTgtLang: (v: string) => void;
-  glossesOn: boolean;
-  onToggleGlosses: () => void;
   marginOpen: boolean;
   settingsOpen: boolean;
   onToggleSettings: () => void;
@@ -16,12 +8,6 @@ type Props = {
 };
 
 export function TopBar({
-  srcLang,
-  tgtLang,
-  onSrcLang,
-  onTgtLang,
-  glossesOn,
-  onToggleGlosses,
   marginOpen,
   settingsOpen,
   onToggleSettings,
@@ -37,25 +23,6 @@ export function TopBar({
 
       <span className="bar-spacer" />
 
-      <span className="langpair">
-        <span className="lbl">reading</span>
-        <select value={srcLang} onChange={(e) => onSrcLang(e.target.value)} aria-label="Source language">
-          {SOURCE_LANGS.map((l) => (
-            <option key={l.code} value={l.code}>
-              {l.name}
-            </option>
-          ))}
-        </select>
-        <span className="arrow">→</span>
-        <select value={tgtLang} onChange={(e) => onTgtLang(e.target.value)} aria-label="Target language">
-          {TARGET_LANGS.map((l) => (
-            <option key={l.code} value={l.code}>
-              {l.name}
-            </option>
-          ))}
-        </select>
-      </span>
-
       <button
         className="chip settings-chip"
         aria-pressed={settingsOpen}
@@ -63,9 +30,6 @@ export function TopBar({
         title="Reading settings"
       >
         Aa
-      </button>
-      <button className="chip" aria-pressed={glossesOn} onClick={onToggleGlosses}>
-        {glossesOn ? 'Glosses on' : 'Glosses off'}
       </button>
       <button
         className="chip"

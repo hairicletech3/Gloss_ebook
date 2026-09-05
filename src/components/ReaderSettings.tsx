@@ -1,4 +1,5 @@
 import {
+  FONTS,
   LEADING_MAX,
   LEADING_MIN,
   LEADING_STEP,
@@ -6,6 +7,7 @@ import {
   SIZE_MIN,
   SIZE_STEP,
   THEMES,
+  type FontId,
   type ReaderPrefs,
   type Theme,
 } from '../lib/readerPrefs';
@@ -33,11 +35,33 @@ export function ReaderSettings({ prefs, onChange, onClose }: Props) {
 
   const setTheme = (theme: Theme) => onChange({ ...prefs, theme });
 
+  const setFont = (font: FontId) => onChange({ ...prefs, font });
+
   return (
     <div className="settings" role="dialog" aria-label="Reading settings">
       <button className="card-close" onClick={onClose} title="Close" aria-label="Close">
         ×
       </button>
+
+      {/* Each row is set in the face it selects — a font picker that does not
+          show you the fonts is a list of trivia. */}
+      <div className="settings-row settings-fonts">
+        <span className="settings-label">Typeface</span>
+        <div className="font-picker">
+          {FONTS.map((f) => (
+            <button
+              key={f.id}
+              className={f.id === prefs.font ? 'on' : ''}
+              style={{ fontFamily: f.stack }}
+              aria-pressed={f.id === prefs.font}
+              onClick={() => setFont(f.id)}
+            >
+              <span className="font-name">{f.label}</span>
+              <span className="font-note">{f.note}</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="settings-row">
         <span className="settings-label">Text size</span>

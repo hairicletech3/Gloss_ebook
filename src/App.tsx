@@ -9,6 +9,7 @@ import { parsePage } from './lib/parsePage';
 import { useScreenChunks } from './lib/useScreenChunks';
 import { sentenceAt, tokenize } from './lib/tokenize';
 import { segmenterLocale } from './lib/languages';
+import { applyPrefs, fontById, loadPrefs, savePrefs, type ReaderPrefs } from './lib/readerPrefs';
 import {
   listHighlights,
   saveHighlight,
@@ -34,6 +35,7 @@ import { Margin } from './components/Margin';
 import { PhraseCard } from './components/PhraseCard';
 import { NoteCard } from './components/NoteCard';
 import { NotePeek } from './components/NotePeek';
+import { ReaderSettings } from './components/ReaderSettings';
 import { useToast } from './components/Toast';
 
 type LastWord = { key: string; term: string; context: string };
@@ -53,6 +55,12 @@ const LS_MARGIN = 'gloss.marginOpen';
     hand useScreenChunks a new array every render whenever no book is open,
     which loops its measurement effect forever. */
 const NO_PARAGRAPHS: string[] = [];
+/** Matches app.css: at or below this the margin floats over the page — a
+    bottom sheet on a phone, a side drawer on a portrait tablet — rather than
+    sitting beside it in the flex row. Anything that covers the page has to
+    close itself when you navigate, and must not start open. */
+const OVERLAY_MARGIN = '(max-width: 834px)';
+const marginOverlays = () => window.matchMedia(OVERLAY_MARGIN).matches;
 
 export default function App() {
   const { toast, node: toastNode } = useToast();
@@ -91,15 +99,26 @@ export default function App() {
   const [peek, setPeek] = useState<{ note: string; anchor: DOMRect } | null>(null);
 
   const [srcLang, setSrcLang] = useState(() => localStorage.getItem(LS_SRC) || 'auto');
-  const [tgtLang, setTgtLang] = useState(() => localStorage.getItem(LS_TGT) || 'km');
-  const [glossesOn, setGlossesOn] = useState(true);
+  /* Fixed for the session: the target select is gone from the bar, and
+     TARGET_LANGS has only ever held Khmer. Still read from storage so an
+     existing stored value wins if a second target is ever offered. */
+  const tgtLang = localStorage.getItem(LS_TGT) || 'km';
   /* Open by default where there's room for a side panel, closed on a phone
      where it covers the page as a bottom sheet. Remembered either way. */
   const [marginOpen, setMarginOpen] = useState(() => {
     const saved = localStorage.getItem(LS_MARGIN);
     if (saved !== null) return saved === '1';
-    return window.innerWidth > 680;
+    return !marginOverlays();
   });
+
+  /* Reading size, leading and theme. Applied to <html> rather than to a
+     rendered element so useScreenChunks' off-tree measurement probe inherits
+     exactly the same type — see applyPrefs. */
+  const [prefs, setPrefs] = useState<ReaderPrefs>(loadPrefs);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Bumped when the chosen face has actually arrived, to force the page
+      split to be measured again against its real metrics — see below. */
+  const [fontEpoch, setFontEpoch] = useState(0);
 
   const [importing, setImporting] = useState(false);
   const [status, setStatus] = useState('');
@@ -128,11 +147,43 @@ export default function App() {
     localStorage.setItem(LS_SRC, srcLang);
   }, [srcLang]);
   useEffect(() => {
-    localStorage.setItem(LS_TGT, tgtLang);
-  }, [tgtLang]);
-  useEffect(() => {
     localStorage.setItem(LS_MARGIN, marginOpen ? '1' : '0');
   }, [marginOpen]);
+  useEffect(() => {
+    applyPrefs(prefs);
+    savePrefs(prefs);
+  }, [prefs]);
+
+  /* A web font is fetched asynchronously, so the first measurement of a page
+     after switching typeface runs against the fallback face. When the real one
+     swaps in, its metrics differ and the split that was correct for Georgia
+     clips a line or two of Literata. Waiting for the load and then bumping the
+     epoch re-measures against what is actually on screen. document.fonts.load
+     resolves whether or not the face was found, which is what we want: either
+     way the page is now showing its final metrics. */
+  useEffect(() => {
+    const { family } = fontById(prefs.font);
+    if (!family || !document.fonts?.load) return;
+    let alive = true;
+    document.fonts
+      .load(`400 1em "${family}"`)
+      .catch(() => {})
+      .then(() => alive && setFontEpoch((n) => n + 1));
+    return () => {
+      alive = false;
+    };
+  }, [prefs.font]);
+
+  /* Turning an iPad on its side moves the margin between a panel beside the
+     page and a drawer over it. A panel that was open is fine to leave open;
+     the same state as a drawer is a modal scrim dropped over the book you
+     were reading, so crossing that line closes it. */
+  useEffect(() => {
+    const mq = window.matchMedia(OVERLAY_MARGIN);
+    const onChange = (e: MediaQueryListEvent) => e.matches && setMarginOpen(false);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   /* ── library + margin load ─────────────────────────────────── */
   useEffect(() => {
@@ -169,7 +220,11 @@ export default function App() {
      the hook, so `chunks` can lag a render behind a page change; resolving
      the -1 sentinel here (rather than in an effect racing that measurement)
      means it's always read fresh, however many renders it takes to settle. */
-  const chunks = useScreenChunks(parsed?.paragraphs ?? NO_PARAGRAPHS, sheetRef);
+  const chunks = useScreenChunks(
+    parsed?.paragraphs ?? NO_PARAGRAPHS,
+    sheetRef,
+    `${prefs.font}/${prefs.size}/${prefs.leading}/${fontEpoch}`,
+  );
   /* A pending jump wins over chunkIndex until it lands, for the same reason
      the -1 sentinel does: it re-resolves against freshly measured chunks
      instead of a number captured before they existed. */
@@ -490,7 +545,7 @@ export default function App() {
     setFlashId(h.id);
     setEditing(null);
     setPhrase(null);
-    if (window.innerWidth <= 680) setMarginOpen(false);
+    if (marginOverlays()) setMarginOpen(false);
   }, []);
 
   useEffect(() => {
@@ -556,8 +611,14 @@ export default function App() {
      — see onSheetMouseUp and onSheetKeyDown below. */
   const activateWord = useCallback(
     (key: string) => {
+      /* Ahead of either branch: this word is now the one whose gloss shows in
+         full (.w.active in Page). glossWord sets the same thing on its own
+         path, but the save path below would otherwise leave the expanded
+         gloss sitting on whatever was tapped before. */
+      const ref = refFor(key);
+      if (ref) setLastWord(ref);
+
       if (shownGlosses.has(key) && !pending.has(key)) {
-        const ref = refFor(key);
         const translation = shownGlosses.get(key);
         if (ref && translation) void keep(ref.term, translation, ref.context, 'word');
         return;
@@ -574,6 +635,14 @@ export default function App() {
      across more than one word is still read as a phrase selection. */
   const onSheetMouseUp = useCallback(
     (e: React.MouseEvent) => {
+      /* Safari still sends a synthetic mouse event after a touch it did not
+         treat as a drag, so a flick that turned the page can arrive here as a
+         click on the word it started over. The turn already happened; this
+         one is discarded. */
+      if (swiped.current) {
+        swiped.current = false;
+        return;
+      }
       const sel = window.getSelection();
       const picked = sel?.toString().trim() ?? '';
       if (picked && sel && sel.rangeCount > 0 && isPhrase(picked)) {
@@ -631,9 +700,27 @@ export default function App() {
     return () => document.removeEventListener('mousedown', onDown);
   }, [editing]);
 
+  /* Same outside-tap dismissal as the note card. The chip that opened it is
+     excluded, or its own click would reopen and immediately reclose it. */
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest('.settings') || t?.closest('.settings-chip')) return;
+      setSettingsOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [settingsOpen]);
+
   /* Hovering a note marker previews the note. Delegated from the sheet so it
      survives the page re-rendering underneath it. */
   const onSheetPointerOver = useCallback((e: React.PointerEvent) => {
+    /* Touch only ever fires pointerover on the way to a tap, and often no
+       matching pointerout at all, so the preview would open and then stay
+       open over the page. A tap on the marker opens the full note card
+       instead — see onSheetMouseUp. */
+    if (e.pointerType !== 'mouse') return;
     const pin = (e.target as HTMLElement).closest<HTMLElement>('.hl-pin');
     if (!pin?.dataset.note) return;
     setPeek({ note: pin.dataset.note, anchor: pin.getBoundingClientRect() });
@@ -644,25 +731,38 @@ export default function App() {
     if (pin) setPeek(null);
   }, []);
 
-  /* Swipe left/right turns the page on touch devices, alongside the Pager
-     arrows. A long-press-to-select gesture stays put (native selection
-     handles), while a quick horizontal drag reads as a page turn — the two
-     rarely overlap in practice, so no extra disambiguation is needed. */
-  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  /* Swipe left/right turns the page, alongside the Pager's arrows and the
+     keyboard's. The sheet is also where you select a phrase to translate and
+     where you pinch to zoom, so a swipe has to be told apart from both: one
+     finger only, no live selection, and fast enough and horizontal enough to
+     be a flick rather than a scroll or a long-press. */
+  const touchStart = useRef<{ x: number; y: number; at: number } | null>(null);
+  /** Set by a flick that turned the page, read (and cleared) by the mouseup
+      Safari synthesises afterwards. */
+  const swiped = useRef(false);
   const onSheetTouchStart = useCallback((e: React.TouchEvent) => {
-    const t = e.touches[0];
-    touchStart.current = t ? { x: t.clientX, y: t.clientY } : null;
+    swiped.current = false;
+    // A second finger is a pinch-zoom, never a page turn.
+    const t = e.touches.length === 1 ? e.touches[0] : null;
+    touchStart.current = t ? { x: t.clientX, y: t.clientY, at: Date.now() } : null;
   }, []);
   const onSheetTouchEnd = useCallback(
     (e: React.TouchEvent) => {
       const start = touchStart.current;
       touchStart.current = null;
-      if (!start) return;
+      if (!start || e.touches.length) return;
       const t = e.changedTouches[0];
       if (!t) return;
+      /* A drag that grew a selection is the reader picking out a phrase to
+         translate; the mouseup path turns that into a card, so it must not
+         also turn the page underneath it. */
+      if (window.getSelection()?.toString().trim()) return;
+      // A flick is a page turn. A slow drag is a scroll or a long-press.
+      if (Date.now() - start.at > 700) return;
       const dx = t.clientX - start.x;
       const dy = t.clientY - start.y;
-      if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      swiped.current = true;
       go(dx < 0 ? 1 : -1);
     },
     [go],
@@ -707,6 +807,7 @@ export default function App() {
       if (e.key === 'Escape') {
         setPhrase(null);
         setEditing(null);
+        setSettingsOpen(false);
         return;
       }
       if (!book || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -776,19 +877,13 @@ export default function App() {
 
   return (
     <div
-      className={
-        (glossesOn ? '' : 'glosses-off ') + (dropping ? 'dropping' : '')
-      }
+      className={dropping ? 'dropping' : ''}
       style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
     >
       <TopBar
-        srcLang={srcLang}
-        tgtLang={tgtLang}
-        onSrcLang={setSrcLang}
-        onTgtLang={setTgtLang}
-        glossesOn={glossesOn}
-        onToggleGlosses={() => setGlossesOn((v) => !v)}
         marginOpen={marginOpen}
+        settingsOpen={settingsOpen}
+        onToggleSettings={() => setSettingsOpen((v) => !v)}
         onCloseBook={() => setBook(null)}
         onToggleMargin={() => setMarginOpen((v) => !v)}
         onSignOut={() => void supabase.auth.signOut()}
@@ -830,6 +925,7 @@ export default function App() {
                 range={[currentChunk.start, currentChunk.end]}
                 highlighted={highlightedTokens}
                 flashId={flashId}
+                activeKey={lastWord?.key ?? null}
               />
             ) : (
               <Shelf
@@ -850,9 +946,27 @@ export default function App() {
             pageCount={book?.page_count ?? 0}
             chunkIndex={resolvedChunkIndex}
             chunkCount={chunks.length}
+            onPrev={() => go(-1)}
+            onNext={() => go(1)}
+            canPrev={!!book && (resolvedChunkIndex > 0 || page > 0)}
+            canNext={
+              !!book &&
+              (resolvedChunkIndex < chunks.length - 1 || page < book.page_count - 1)
+            }
           />
           <div className="spacer-b" />
         </div>
+
+        {/* Only visible where the margin covers the page: a sheet you can
+            only close by finding a small chevron is a trap on a touchscreen. */}
+        {marginOpen && (
+          <button
+            className="margin-scrim"
+            aria-label="Close the margin"
+            tabIndex={-1}
+            onClick={() => setMarginOpen(false)}
+          />
+        )}
 
         <Margin
           words={bookWords}
@@ -863,10 +977,10 @@ export default function App() {
             setPage(p);
             setChunkIndex(0);
             setTargetPara(null);
-            // On a phone the margin covers the page, so jumping has to
-            // dismiss it. On a wider screen it sits beside the text — closing
-            // it there would just take the list away mid-use.
-            if (window.innerWidth <= 680) setMarginOpen(false);
+            // Where the margin covers the page, jumping has to dismiss it.
+            // On a wide screen it sits beside the text — closing it there
+            // would just take the list away mid-use.
+            if (marginOverlays()) setMarginOpen(false);
           }}
           onDelete={removeWord}
           onDeleteHighlight={removeHighlight}
@@ -889,6 +1003,14 @@ export default function App() {
           }}
           onHighlight={(color) => void highlightSelection(color)}
           onClose={() => setPhrase(null)}
+        />
+      )}
+
+      {settingsOpen && (
+        <ReaderSettings
+          prefs={prefs}
+          onChange={setPrefs}
+          onClose={() => setSettingsOpen(false)}
         />
       )}
 

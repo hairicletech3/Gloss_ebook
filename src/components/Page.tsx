@@ -15,6 +15,9 @@ type Props = {
   highlighted: Map<string, HlToken>;
   /** Highlight just jumped to, lit briefly so it can be found on arrival. */
   flashId: string | null;
+  /** The word last tapped or focused. Its gloss escapes the 16ch clamp — on a
+      touchscreen there is no hover to reveal a long reading with. */
+  activeKey: string | null;
 };
 
 /**
@@ -36,6 +39,7 @@ export function Page({
   range,
   highlighted,
   flashId,
+  activeKey,
 }: Props) {
   const turnClass = turnDir === 'next' ? ' turn-next' : turnDir === 'prev' ? ' turn-prev' : '';
 
@@ -91,7 +95,13 @@ export function Page({
             return (
               <Fragment key={tok.key}>
                 <span
-                  className={'w' + (isPending ? ' pending' : '') + (saved ? ' saved' : '') + hlClass}
+                  className={
+                    'w' +
+                    (isPending ? ' pending' : '') +
+                    (saved ? ' saved' : '') +
+                    (tok.key === activeKey ? ' active' : '') +
+                    hlClass
+                  }
                   data-key={tok.key}
                   data-hl={hl?.id}
                   data-gloss={isPending ? '' : gloss}
