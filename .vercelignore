@@ -1,0 +1,9 @@
+# Build inputs only. Everything here is either tooling that runs on your
+# machine (Prisma migrations, the Deno edge function) or documentation —
+# none of it is read by `tsc -b && vite build`.
+#
+# prisma/ is deliberately NOT ignored: some Vercel build images run
+# `prisma generate` on sight of the CLI, and that needs the schema present.
+supabase/.temp
+gloss-reader-demo.html
+GLOSS-SPEC.md

@@ -67,6 +67,70 @@ Optional secrets: `TRANSLATE_PROVIDER` (`azure` default, or `anthropic`),
 npm run dev
 ```
 
+## Deploy (Vercel)
+
+`vercel.json` covers the build itself. The three steps that actually catch
+people out are all on the Supabase side — the app is served by Vercel but
+every byte of its data, auth and translation comes from Supabase, and none of
+those know about the new origin until you tell them.
+
+### 1. Import the repo
+
+Vercel detects Vite on its own; `vercel.json` pins it anyway
+(`npm run build` → `dist`) so a preset change upstream can't move it.
+
+### 2. Environment variables
+
+Set these in **Project → Settings → Environment Variables**, for Production,
+Preview and Development:
+
+| Name | Value |
+| --- | --- |
+| `VITE_SUPABASE_URL` | `https://YOUR-PROJECT.supabase.co` |
+| `VITE_SUPABASE_ANON_KEY` | your anon key |
+
+Those two, and nothing else. `DIRECT_URL` is a migration credential that
+bypasses RLS — it belongs on your machine and must never reach Vercel. The
+translation provider's key belongs in Edge Function secrets. Only `VITE_`
+variables are compiled into the bundle, so anything you add with that prefix
+is public: treat it as published the moment you deploy.
+
+Vercel does not rebuild on an env var change. Redeploy after setting them, or
+the bundle still carries the old values — an app that boots to
+"Not configured yet" after you've filled these in is almost always this.
+
+### 3. Point Supabase at the new origin
+
+**Auth → URL Configuration.** Set **Site URL** to your Vercel domain and add
+it to **Redirect URLs**. Sign-up confirmation emails are built from Site URL,
+so until you change it every new account gets a link to `localhost:5173`.
+Add the `https://*-your-team.vercel.app` wildcard too if you want preview
+deployments to be able to log in.
+
+**The translate function's origin allowlist.** It defaults to `*`, which works
+but lets any site call it on your quota:
+
+```bash
+supabase secrets set ALLOWED_ORIGIN=https://your-app.vercel.app
+```
+
+Set this and preview deployments lose translation, since they are on
+different subdomains — that is the trade, and `*` is a defensible choice for
+a personal deployment.
+
+### What is already handled
+
+- **SPA rewrites.** Everything that isn't a real file serves `index.html`.
+  Vercel checks the filesystem before rewrites, so hashed assets still win.
+- **Caching.** `/assets/*` is immutable for a year, which is safe because Vite
+  content-hashes those filenames. `index.html` stays uncached, so a deploy is
+  live immediately.
+- **Headers.** `nosniff`, `DENY` framing, and a conservative
+  `Referrer-Policy`. There is deliberately no CSP: this app loads Google
+  Fonts, opens a pdf.js worker and talks to two Supabase origins, and a CSP
+  written without testing against all four is a white screen in production.
+  Worth adding later, from a browser with the network tab open.
+
 ## Prisma's role
 
 Prisma is a **schema and migration tool here, not a data layer.** It runs from
