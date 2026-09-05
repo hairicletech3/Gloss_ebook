@@ -962,8 +962,28 @@ export default function App() {
   }, [session, handleFile]);
 
   /* ── render ────────────────────────────────────────────────── */
+
+  /* Deliberately above the early returns below. A service worker will serve a
+     cached build indefinitely, so the update prompt has to be reachable from
+     the states that mean something went wrong — otherwise a device that
+     cached a misconfigured build has no way out from inside the app. */
+  const banner = (
+    <StatusBanner
+      offline={!online}
+      needsRefresh={needsRefresh}
+      onUpdate={() => update?.()}
+      onDismissUpdate={dismissUpdate}
+    />
+  );
+  const shell = (children: React.ReactNode) => (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {banner}
+      {children}
+    </div>
+  );
+
   if (!isConfigured) {
-    return (
+    return shell(
       <div className="auth">
         <div className="auth-box">
           <div className="mark">
@@ -971,15 +991,17 @@ export default function App() {
           </div>
           <p>Not configured yet.</p>
           <div className="auth-note">
-            Copy <b>.env.example</b> to <b>.env.local</b> and set VITE_SUPABASE_URL and
-            VITE_SUPABASE_ANON_KEY, then restart the dev server.
+            This build went out without VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
+            Locally, copy <b>.env.example</b> to <b>.env.local</b> and restart the dev server.
+            On a deployed site, the values come from <b>.env.production</b> at build time — so
+            the fix is a rebuild, not a reload.
           </div>
         </div>
-      </div>
+      </div>,
     );
   }
-  if (booting) return <div className="boot">…</div>;
-  if (!session) return <Auth />;
+  if (booting) return shell(<div className="boot">…</div>);
+  if (!session) return shell(<Auth />);
 
   const phraseSaved = phrase
     ? bookWords.some((w) => w.term.toLowerCase() === phrase.source.toLowerCase())
@@ -990,12 +1012,7 @@ export default function App() {
       className={dropping ? 'dropping' : ''}
       style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
     >
-      <StatusBanner
-        offline={!online}
-        needsRefresh={needsRefresh}
-        onUpdate={() => update?.()}
-        onDismissUpdate={dismissUpdate}
-      />
+      {banner}
       <TopBar
         marginOpen={marginOpen}
         settingsOpen={settingsOpen}
