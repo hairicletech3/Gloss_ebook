@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { saveHighlights, loadHighlights, withTimeout } from './offlineStore';
 import type { Highlight, HighlightColor } from './types';
 
 /**
@@ -14,15 +15,25 @@ export const HIGHLIGHT_COLORS: { id: HighlightColor; label: string }[] = [
 ];
 
 export async function listHighlights(bookId: string): Promise<Highlight[]> {
-  const { data, error } = await supabase
-    .from('highlights')
-    .select('*')
-    .eq('book_id', bookId)
-    .order('page', { ascending: true })
-    .order('para_index', { ascending: true })
-    .order('start_off', { ascending: true });
-  if (error) throw error;
-  return (data ?? []) as Highlight[];
+  try {
+    const { data, error } = await withTimeout(
+      supabase
+        .from('highlights')
+        .select('*')
+        .eq('book_id', bookId)
+        .order('page', { ascending: true })
+        .order('para_index', { ascending: true })
+        .order('start_off', { ascending: true }),
+    );
+    if (error) throw error;
+    const rows = (data ?? []) as Highlight[];
+    void saveHighlights(bookId, rows);
+    return rows;
+  } catch (e) {
+    const cached = await loadHighlights(bookId);
+    if (cached) return cached;
+    throw e;
+  }
 }
 
 export type NewHighlight = {

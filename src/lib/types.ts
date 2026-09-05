@@ -4,6 +4,8 @@ export type Book = {
   title: string;
   source_lang: string | null;
   storage_path: string;
+  /** Cover image in the private bucket, or null for the generated tile. */
+  cover_path: string | null;
   pages: string[];
   page_count: number;
   last_page: number;

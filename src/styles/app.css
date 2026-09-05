@@ -47,6 +47,38 @@ button {
   border-radius: 2px;
 }
 
+/* ── status banner (offline / update ready) ── */
+.status-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 7px max(14px, env(safe-area-inset-left)) 7px max(14px, env(safe-area-inset-right));
+  background: var(--lapis-wash);
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+}
+.status-banner.is-offline {
+  background: var(--gold-wash);
+  color: var(--gold);
+}
+.status-acts {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.status-banner .chip {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 10.5px;
+}
+
 /* ── top bar ───────────────────────────────── */
 .bar {
   flex: 0 0 auto;
@@ -595,6 +627,43 @@ button.mark:hover {
   width: 7px;
   background: rgba(0, 0, 0, 0.14);
 }
+.book-cover-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* Cover, not contain: real jackets aren't all 2:3, and letterboxing them
+     against the tile colour looks like a loading error. */
+  object-fit: cover;
+  display: block;
+}
+/* The spine and the corner labels are drawn over artwork now, so they need
+   their own contrast rather than borrowing the tile's. */
+.book-cover.has-image .book-cover-lang {
+  background: var(--scrim);
+  color: var(--ink);
+  border-radius: 3px;
+  padding: 1px 4px;
+  opacity: 1;
+}
+.book-cover.has-image .book-cover-progress {
+  background: rgba(0, 0, 0, 0.35);
+}
+.book-cover.has-image .book-cover-progress span {
+  background: #fff;
+  opacity: 1;
+}
+.book-cover-busy {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--scrim);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
 .book-cover-glyph {
   font-family: var(--display);
   font-weight: 800;
@@ -605,12 +674,15 @@ button.mark:hover {
 .book-cover-lang {
   position: absolute;
   top: 8px;
-  right: 9px;
+  /* Left, not right: the card's action buttons own the top-right corner and
+     the two were sitting on top of each other. 12px clears the spine. */
+  left: 12px;
   font-family: var(--mono);
   font-size: 9.5px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   opacity: 0.75;
+  z-index: 1;
 }
 .book-cover-progress {
   position: absolute;
@@ -619,6 +691,7 @@ button.mark:hover {
   bottom: 0;
   height: 3px;
   background: rgba(0, 0, 0, 0.14);
+  z-index: 1;
 }
 .book-cover-progress span {
   display: block;
@@ -650,12 +723,15 @@ button.mark:hover {
   color: var(--muted);
   margin-top: 3px;
 }
-.book-del {
+/* One button, not a row of them: on a 128px tile — and especially over real
+   cover art — a cluster of icons reads as clutter. Everything else moved
+   into the menu it opens. */
+.book-act {
   position: absolute;
   top: 6px;
   right: 6px;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -663,24 +739,113 @@ button.mark:hover {
   border-radius: 50%;
   background: var(--scrim);
   color: var(--ink-soft);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1;
+  padding: 0;
   opacity: 0;
   transition: opacity 0.12s;
 }
-.book-card:hover .book-del {
+.book-act:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.book-card:hover .book-act,
+.book-card:focus-within .book-act {
   opacity: 1;
 }
 /* A hover reveal is unreachable on a touchscreen — iPad included — so give
-   touch devices a permanently-visible (if quieter) delete button instead. */
+   touch devices a permanently-visible (if quieter) control instead. */
 @media (hover: none) {
-  .book-del {
+  .book-act {
     opacity: 0.8;
   }
 }
-.book-del:hover {
-  color: var(--danger);
+.book-act:hover:not(:disabled) {
+  color: var(--ink);
   background: var(--page);
+}
+
+/* ── per-book menu ─────────────────────────── */
+.bookmenu {
+  position: fixed;
+  z-index: 70;
+  min-width: 170px;
+  padding: 5px;
+  background: var(--page);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  box-shadow: 0 16px 36px -18px rgba(0, 0, 0, 0.55);
+}
+.bookmenu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink);
+}
+.bookmenu button:hover {
+  background: var(--paper);
+}
+.bookmenu button.danger {
+  color: var(--danger);
+}
+.bookmenu-rule {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--rule);
+}
+
+/* ── confirm dialog ────────────────────────── */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.35);
+}
+.confirm {
+  width: 100%;
+  max-width: 380px;
+  background: var(--page);
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  padding: 20px 22px 18px;
+  box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.7);
+}
+.confirm h3 {
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: var(--ink);
+}
+.confirm p {
+  font-family: var(--body);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  margin: 0 0 18px;
+}
+.confirm .act {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.chip.solid.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.chip.solid.danger:hover:not(:disabled) {
+  filter: brightness(0.92);
 }
 
 /* ── footer / pager ────────────────────────── */

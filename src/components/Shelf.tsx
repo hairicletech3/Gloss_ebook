@@ -4,10 +4,15 @@ type Props = {
   books: BookMeta[];
   loading: boolean;
   onOpen: (book: BookMeta) => void;
-  onDelete: (book: BookMeta) => void;
   onImport: () => void;
   importing: boolean;
   status: string;
+  /** cover_path → signed URL. Private bucket, so paths aren't linkable. */
+  coverUrls: Map<string, string>;
+  /** Opens the per-book menu, anchored to the button that was clicked. */
+  onMenu: (book: BookMeta, anchor: DOMRect) => void;
+  /** Book whose cover is mid-upload. */
+  coverBusyId: string | null;
 };
 
 /* Cheap deterministic hash so the same title always gets the same cover,
@@ -34,34 +39,58 @@ function initial(title: string) {
   return title.trim().charAt(0).toUpperCase() || '?';
 }
 
-function BookCard({ book, onOpen, onDelete }: { book: BookMeta; onOpen: () => void; onDelete: () => void }) {
-  const cover = coverFor(book.title);
+function BookCard({
+  book,
+  coverUrl,
+  busy,
+  onOpen,
+  onMenu,
+}: {
+  book: BookMeta;
+  coverUrl: string | undefined;
+  busy: boolean;
+  onOpen: () => void;
+  onMenu: (anchor: DOMRect) => void;
+}) {
+  const tile = coverFor(book.title);
   const progress = book.page_count > 0 ? Math.min(1, (book.last_page + 1) / book.page_count) : 0;
+  const hasCover = Boolean(book.cover_path && coverUrl);
 
   return (
     <div className="book-card">
       <button
-        className="book-cover"
-        style={{ background: cover.bg, color: cover.fg }}
+        className={'book-cover' + (hasCover ? ' has-image' : '')}
+        style={hasCover ? undefined : { background: tile.bg, color: tile.fg }}
         onClick={onOpen}
         title={book.title}
       >
-        <span className="book-cover-glyph">{initial(book.title)}</span>
+        {hasCover ? (
+          <img src={coverUrl} alt="" className="book-cover-img" />
+        ) : (
+          <span className="book-cover-glyph">{initial(book.title)}</span>
+        )}
+        {/* Kept above the artwork: on a real cover these are the only two
+            things the tile itself can't tell you. */}
         {book.source_lang && <span className="book-cover-lang">{book.source_lang}</span>}
         {progress > 0 && (
           <span className="book-cover-progress">
             <span style={{ width: `${progress * 100}%` }} />
           </span>
         )}
+        {busy && <span className="book-cover-busy">Uploading …</span>}
       </button>
+
       <button
-        className="book-del"
-        title="Delete this book"
-        aria-label={`Delete ${book.title}`}
-        onClick={onDelete}
+        className="book-act"
+        title={`More for ${book.title}`}
+        aria-label={`More options for ${book.title}`}
+        aria-haspopup="menu"
+        disabled={busy}
+        onClick={(e) => onMenu(e.currentTarget.getBoundingClientRect())}
       >
-        ×
+        ⋯
       </button>
+
       <button className="book-title" onClick={onOpen} title={book.title}>
         {book.title}
       </button>
@@ -72,7 +101,17 @@ function BookCard({ book, onOpen, onDelete }: { book: BookMeta; onOpen: () => vo
   );
 }
 
-export function Shelf({ books, loading, onOpen, onDelete, onImport, importing, status }: Props) {
+export function Shelf({
+  books,
+  loading,
+  onOpen,
+  onImport,
+  importing,
+  status,
+  coverUrls,
+  onMenu,
+  coverBusyId,
+}: Props) {
   const hasBooks = !loading && books.length > 0;
 
   return (
@@ -89,7 +128,14 @@ export function Shelf({ books, loading, onOpen, onDelete, onImport, importing, s
       {hasBooks ? (
         <div className="library-grid">
           {books.map((b) => (
-            <BookCard key={b.id} book={b} onOpen={() => onOpen(b)} onDelete={() => onDelete(b)} />
+            <BookCard
+              key={b.id}
+              book={b}
+              coverUrl={b.cover_path ? coverUrls.get(b.cover_path) : undefined}
+              busy={coverBusyId === b.id}
+              onOpen={() => onOpen(b)}
+              onMenu={(anchor) => onMenu(b, anchor)}
+            />
           ))}
         </div>
       ) : (

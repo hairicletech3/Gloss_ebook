@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 
 import { supabase, isConfigured } from './lib/supabase';
 import { importBook, listBooks, getBook, saveLastPage, deleteBook } from './lib/books';
+import { uploadCover, removeCover, signCovers, CoverError } from './lib/covers';
 import { listWords, saveWord, deleteWord } from './lib/words';
 import { translate } from './lib/translate';
 import { parsePage } from './lib/parsePage';
@@ -35,6 +36,12 @@ import { Margin } from './components/Margin';
 import { PhraseCard } from './components/PhraseCard';
 import { NoteCard } from './components/NoteCard';
 import { NotePeek } from './components/NotePeek';
+import { BookMenu, type BookMenuAction } from './components/BookMenu';
+import { ConfirmDialog } from './components/ConfirmDialog';
+import { StatusBanner } from './components/StatusBanner';
+import { useOnline } from './lib/useOnline';
+import { useAppUpdate } from './lib/useAppUpdate';
+import { requestPersistence, clearOfflineData } from './lib/offlineStore';
 import { ReaderSettings } from './components/ReaderSettings';
 import { useToast } from './components/Toast';
 
@@ -67,9 +74,21 @@ export default function App() {
 
   const [session, setSession] = useState<Session | null>(null);
   const [booting, setBooting] = useState(true);
+  const online = useOnline();
+  const { needsRefresh, update, dismiss: dismissUpdate } = useAppUpdate();
 
   const [books, setBooks] = useState<BookMeta[]>([]);
   const [booksLoading, setBooksLoading] = useState(true);
+  /** cover_path → signed URL, refreshed whenever the shelf's covers change. */
+  const [coverUrls, setCoverUrls] = useState<Map<string, string>>(new Map());
+  const [coverBusyId, setCoverBusyId] = useState<string | null>(null);
+  /** The book whose ⋯ menu is open, and where to hang it. */
+  const [bookMenu, setBookMenu] = useState<{ book: BookMeta; anchor: DOMRect } | null>(null);
+  /** Set while the delete confirmation is up. */
+  const [confirmDelete, setConfirmDelete] = useState<BookMeta | null>(null);
+  /** One file input for every card's cover, remembering which book asked. */
+  const coverInputRef = useRef<HTMLInputElement>(null);
+  const coverTargetRef = useRef<BookMeta | null>(null);
   const [book, setBook] = useState<Book | null>(null);
   const [page, setPage] = useState(0);
   /** Which screen-fit chunk of the stored page is showing. -1 is a sentinel
@@ -143,6 +162,12 @@ export default function App() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  /* Ask once that the offline copy not be evicted under storage pressure —
+     a book you cached for a flight is no use if the browser reclaims it. */
+  useEffect(() => {
+    void requestPersistence();
+  }, []);
+
   useEffect(() => {
     localStorage.setItem(LS_SRC, srcLang);
   }, [srcLang]);
@@ -207,6 +232,68 @@ export default function App() {
       alive = false;
     };
   }, [session, toast]);
+
+  /* Covers live in the private bucket, so each needs a signed URL before it
+     can be shown. Keyed on the set of paths rather than on `books`, so
+     turning a page or saving a position doesn't re-sign the whole shelf. */
+  const coverPathKey = books
+    .map((b) => b.cover_path)
+    .filter(Boolean)
+    .join('|');
+  useEffect(() => {
+    const paths = coverPathKey ? coverPathKey.split('|') : [];
+    if (!paths.length) {
+      setCoverUrls(new Map());
+      return;
+    }
+    let alive = true;
+    signCovers(paths)
+      .then((m) => alive && setCoverUrls(m))
+      .catch(() => {
+        /* The shelf falls back to the generated tile — not worth a toast. */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [coverPathKey]);
+
+  const setCover = useCallback(
+    async (meta: BookMeta, file: File) => {
+      if (!session) return;
+      setCoverBusyId(meta.id);
+      try {
+        const path = await uploadCover(meta, file, session.user.id);
+        setBooks((bs) => bs.map((b) => (b.id === meta.id ? { ...b, cover_path: path } : b)));
+        toast('Cover updated');
+      } catch (e) {
+        toast(
+          e instanceof CoverError
+            ? e.message
+            : e instanceof Error
+              ? e.message
+              : 'Could not set that cover',
+        );
+      } finally {
+        setCoverBusyId(null);
+      }
+    },
+    [session, toast],
+  );
+
+  const clearCover = useCallback(
+    async (meta: BookMeta) => {
+      setCoverBusyId(meta.id);
+      try {
+        await removeCover(meta);
+        setBooks((bs) => bs.map((b) => (b.id === meta.id ? { ...b, cover_path: null } : b)));
+      } catch {
+        toast('Could not remove that cover');
+      } finally {
+        setCoverBusyId(null);
+      }
+    },
+    [toast],
+  );
 
   /* ── the page currently on screen ──────────────────────────── */
   const parsed = useMemo(
@@ -360,6 +447,12 @@ export default function App() {
   const handleFile = useCallback(
     async (file: File) => {
       if (!session) return;
+      // Importing uploads the file and writes a row; failing halfway would
+      // leave a book that can't be read. Refuse up front instead.
+      if (!online) {
+        toast("You're offline — importing needs a connection.");
+        return;
+      }
       setImporting(true);
       setStatus('Reading ' + file.name + ' …');
       try {
@@ -374,12 +467,12 @@ export default function App() {
         setStatus('');
       }
     },
-    [session, srcLang, toast, openBook],
+    [session, srcLang, toast, openBook, online],
   );
 
+  /* The confirmation lives in ConfirmDialog now, so this just does the work. */
   const removeBook = useCallback(
     async (meta: BookMeta) => {
-      if (!window.confirm(`Delete “${meta.title}” and everything saved from it?`)) return;
       try {
         await deleteBook(meta);
         setBooks((bs) => bs.filter((b) => b.id !== meta.id));
@@ -391,6 +484,23 @@ export default function App() {
       }
     },
     [book, toast],
+  );
+
+  const onBookMenuAction = useCallback(
+    (action: BookMenuAction) => {
+      const meta = bookMenu?.book;
+      setBookMenu(null);
+      if (!meta) return;
+      if (action === 'cover') {
+        coverTargetRef.current = meta;
+        coverInputRef.current?.click();
+      } else if (action === 'remove-cover') {
+        void clearCover(meta);
+      } else {
+        setConfirmDelete(meta);
+      }
+    },
+    [bookMenu, clearCover],
   );
 
   /* Turning "next"/"prev" (delta is always ±1) walks the on-screen chunks of
@@ -880,13 +990,24 @@ export default function App() {
       className={dropping ? 'dropping' : ''}
       style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
     >
+      <StatusBanner
+        offline={!online}
+        needsRefresh={needsRefresh}
+        onUpdate={() => update?.()}
+        onDismissUpdate={dismissUpdate}
+      />
       <TopBar
         marginOpen={marginOpen}
         settingsOpen={settingsOpen}
         onToggleSettings={() => setSettingsOpen((v) => !v)}
         onCloseBook={() => setBook(null)}
         onToggleMargin={() => setMarginOpen((v) => !v)}
-        onSignOut={() => void supabase.auth.signOut()}
+        onSignOut={() => {
+          // The cached books belong to the account being left, not to the
+          // device — don't hand them to whoever signs in next.
+          void clearOfflineData();
+          void supabase.auth.signOut();
+        }}
       />
       <input
         ref={fileRef}
@@ -897,6 +1018,20 @@ export default function App() {
           const f = e.target.files?.[0];
           e.target.value = '';
           if (f) void handleFile(f);
+        }}
+      />
+      {/* Shared by every card's menu; coverTargetRef says which book asked. */}
+      <input
+        ref={coverInputRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          const target = coverTargetRef.current;
+          coverTargetRef.current = null;
+          if (f && target) void setCover(target, f);
         }}
       />
 
@@ -932,10 +1067,12 @@ export default function App() {
                 books={books}
                 loading={booksLoading}
                 onOpen={openBook}
-                onDelete={removeBook}
                 onImport={() => fileRef.current?.click()}
                 importing={importing}
                 status={status}
+                coverUrls={coverUrls}
+                onMenu={(b, anchor) => setBookMenu({ book: b, anchor })}
+                coverBusyId={coverBusyId}
               />
             )}
           </div>
@@ -1011,6 +1148,29 @@ export default function App() {
           prefs={prefs}
           onChange={setPrefs}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+
+      {bookMenu && (
+        <BookMenu
+          anchor={bookMenu.anchor}
+          hasCover={Boolean(bookMenu.book.cover_path)}
+          onAction={onBookMenuAction}
+          onClose={() => setBookMenu(null)}
+        />
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete this book?"
+          body={`“${confirmDelete.title}” and everything you saved from it — words, highlights and notes — will be removed. This can't be undone.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={() => {
+            void removeBook(confirmDelete);
+            setConfirmDelete(null);
+          }}
+          onCancel={() => setConfirmDelete(null)}
         />
       )}
 

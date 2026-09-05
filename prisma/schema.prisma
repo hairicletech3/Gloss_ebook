@@ -26,6 +26,9 @@ model Book {
   sourceLang  String?  @map("source_lang")
   /// Path in the private `books` bucket: {user_id}/{book_id}/{filename}
   storagePath String   @map("storage_path")
+  /// Cover image, same bucket: {user_id}/{book_id}/cover-{n}.{ext}. Null means
+  /// the shelf falls back to the generated tile. Read through a signed URL.
+  coverPath   String?  @map("cover_path")
   /// string[] — the extracted text, one entry per page
   pages       Json
   pageCount   Int      @map("page_count")
