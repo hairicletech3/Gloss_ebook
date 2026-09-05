@@ -1,8 +1,12 @@
-/* Taken verbatim from gloss-reader-demo.html. Do not redesign — port. */
+/* Palette taken verbatim from gloss-reader-demo.html. Do not redesign — port.
+   The Paper values below are that original; Sepia and Dark restate the same
+   roles in a different key, so nothing outside this file needs to know which
+   theme is on. */
 :root {
   --paper: #e9e7e0; /* cool oat, the desk */
   --page: #fcfbf8; /* the sheet itself */
   --ink: #1a1c21;
+  --ink-hover: #2c2f37; /* solid chip, hovered */
   --ink-soft: #4a4d55;
   --muted: #84878f;
   --rule: #d6d3ca;
@@ -10,6 +14,24 @@
   --lapis-wash: #eaedfa;
   --gold: #9a6b18; /* saved / rubricated */
   --gold-wash: #f6eedc;
+  --danger: #b23a3a;
+  --select: #d9def6;
+  --drop: #fbfbff; /* the sheet while a file is dragged over it */
+  --scrim: rgba(255, 255, 255, 0.85); /* chip sitting on top of an image */
+
+  /* Highlight swatches. Each is a fill plus the heavier rule drawn under it. */
+  --hl-yellow-bg: #fbf0c4;
+  --hl-yellow-line: #d9b64e;
+  --hl-blue-bg: #dce6f8;
+  --hl-blue-line: #6f92cf;
+  --hl-green-bg: #d9edda;
+  --hl-green-line: #6aa86e;
+  --hl-pink-bg: #f9dde6;
+  --hl-pink-line: #cf7396;
+
+  /* Set on <html> by readerPrefs; these are only the fallbacks. */
+  --reading-size: 19px;
+  --reading-leading: 2.05;
 
   --display: 'Bricolage Grotesque', system-ui, sans-serif;
   --body: 'Newsreader', Georgia, serif;
@@ -18,4 +40,58 @@
      every non-Latin target we offer gets a real Noto face here. */
   --khmer: 'Noto Sans Khmer', 'Noto Sans JP', 'Noto Sans SC', 'Noto Sans Thai',
     'Newsreader', serif;
+}
+
+:root[data-theme='sepia'] {
+  --paper: #e2d7c0;
+  --page: #f6ecd9;
+  --ink: #33291c;
+  --ink-hover: #4a3c29;
+  --ink-soft: #5c4c38;
+  --muted: #8c7c66;
+  --rule: #d3c3a7;
+  --lapis: #2f4a9c;
+  --lapis-wash: #e2e5f2;
+  --gold: #8a5f16;
+  --gold-wash: #eee0c4;
+  --danger: #a33a2f;
+  --select: #dcd6ee;
+  --drop: #fdf6e8;
+  --scrim: rgba(246, 236, 217, 0.9);
+
+  --hl-yellow-bg: #f2e2ab;
+  --hl-yellow-line: #c9a13c;
+  --hl-blue-bg: #dde2ee;
+  --hl-blue-line: #6a83b8;
+  --hl-green-bg: #dbe6cd;
+  --hl-green-line: #6d9159;
+  --hl-pink-bg: #f0d9d9;
+  --hl-pink-line: #b8737a;
+}
+
+:root[data-theme='dark'] {
+  --paper: #15171b;
+  --page: #1d2025;
+  --ink: #e7e5e0;
+  --ink-hover: #d3d0c9;
+  --ink-soft: #b6b3ab;
+  --muted: #8a8781;
+  --rule: #343841;
+  --lapis: #93a9ee;
+  --lapis-wash: #232b40;
+  --gold: #d9ad5c;
+  --gold-wash: #2f2820;
+  --danger: #e07a72;
+  --select: #2f3a58;
+  --drop: #1b2130;
+  --scrim: rgba(29, 32, 37, 0.9);
+
+  --hl-yellow-bg: #4a3f1d;
+  --hl-yellow-line: #b39134;
+  --hl-blue-bg: #212f47;
+  --hl-blue-line: #5f83c4;
+  --hl-green-bg: #21391f;
+  --hl-green-line: #5f9c66;
+  --hl-pink-bg: #43232f;
+  --hl-pink-line: #b96e8e;
 }

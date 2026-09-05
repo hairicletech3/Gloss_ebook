@@ -8,6 +8,8 @@ type Props = {
   glossesOn: boolean;
   onToggleGlosses: () => void;
   marginOpen: boolean;
+  settingsOpen: boolean;
+  onToggleSettings: () => void;
   onCloseBook: () => void;
   onToggleMargin: () => void;
   onSignOut: () => void;
@@ -21,6 +23,8 @@ export function TopBar({
   glossesOn,
   onToggleGlosses,
   marginOpen,
+  settingsOpen,
+  onToggleSettings,
   onCloseBook,
   onToggleMargin,
   onSignOut,
@@ -52,6 +56,14 @@ export function TopBar({
         </select>
       </span>
 
+      <button
+        className="chip settings-chip"
+        aria-pressed={settingsOpen}
+        onClick={onToggleSettings}
+        title="Reading settings"
+      >
+        Aa
+      </button>
       <button className="chip" aria-pressed={glossesOn} onClick={onToggleGlosses}>
         {glossesOn ? 'Glosses on' : 'Glosses off'}
       </button>

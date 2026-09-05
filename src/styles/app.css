@@ -96,7 +96,7 @@ button.mark:hover {
   border-color: var(--ink);
 }
 .chip.solid:hover:not(:disabled) {
-  background: #2c2f37;
+  background: var(--ink-hover);
 }
 .chip[aria-pressed='false'] {
   opacity: 0.5;
@@ -160,9 +160,11 @@ button.mark:hover {
 .text {
   max-width: 62ch;
   margin: 0 auto;
-  font-size: 19px;
+  /* Both set on <html> from the reader settings; useScreenChunks re-measures
+     the page whenever they change. */
+  font-size: var(--reading-size);
   font-weight: 400;
-  line-height: 2.05;
+  line-height: var(--reading-leading);
   color: var(--ink);
 }
 
@@ -301,25 +303,45 @@ button.mark:hover {
   cursor: pointer;
 }
 .hl-yellow {
-  --hl-bg: #fbf0c4;
-  --hl-line: #d9b64e;
+  --hl-bg: var(--hl-yellow-bg);
+  --hl-line: var(--hl-yellow-line);
 }
 .hl-blue {
-  --hl-bg: #dce6f8;
-  --hl-line: #6f92cf;
+  --hl-bg: var(--hl-blue-bg);
+  --hl-line: var(--hl-blue-line);
 }
 .hl-green {
-  --hl-bg: #d9edda;
-  --hl-line: #6aa86e;
+  --hl-bg: var(--hl-green-bg);
+  --hl-line: var(--hl-green-line);
 }
 .hl-pink {
-  --hl-bg: #f9dde6;
-  --hl-line: #cf7396;
+  --hl-bg: var(--hl-pink-bg);
+  --hl-line: var(--hl-pink-line);
 }
 /* A highlight carrying a note gets a second, heavier rule so you can tell at
    a glance which passages you actually wrote something against. */
 .hl-noted {
   box-shadow: inset 0 -3px 0 var(--hl-line);
+}
+
+/* Pulsed for a moment after following a note back to its passage, so the eye
+   lands on the right words instead of hunting the page for them. */
+.hl-flash {
+  animation: hl-flash 1.4s ease-out;
+}
+@keyframes hl-flash {
+  0%,
+  55% {
+    background: var(--hl-line);
+  }
+  100% {
+    background: var(--hl-bg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hl-flash {
+    animation: none;
+  }
 }
 
 /* The note marker, sitting just after the passage it belongs to. Reading the
@@ -378,16 +400,16 @@ button.mark:hover {
   box-shadow: 0 0 0 2px var(--page), 0 0 0 3.5px var(--ink-soft);
 }
 .sw-yellow {
-  background: #fbf0c4;
+  background: var(--hl-yellow-bg);
 }
 .sw-blue {
-  background: #dce6f8;
+  background: var(--hl-blue-bg);
 }
 .sw-green {
-  background: #d9edda;
+  background: var(--hl-green-bg);
 }
 .sw-pink {
-  background: #f9dde6;
+  background: var(--hl-pink-bg);
 }
 
 .note-input {
@@ -406,13 +428,13 @@ button.mark:hover {
 }
 
 ::selection {
-  background: #d9def6;
+  background: var(--select);
 }
 
 /* ── library ───────────────────────────────── */
 .dropping .sheet {
   border-color: var(--lapis);
-  background: #fbfbff;
+  background: var(--drop);
 }
 
 .library {
@@ -613,7 +635,7 @@ button.mark:hover {
   justify-content: center;
   border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--scrim);
   color: var(--ink-soft);
   font-size: 14px;
   line-height: 1;
@@ -631,7 +653,7 @@ button.mark:hover {
   }
 }
 .book-del:hover {
-  color: #b23a3a;
+  color: var(--danger);
   background: var(--page);
 }
 
@@ -768,6 +790,20 @@ button.mark:hover {
   font-size: 13.5px;
   line-height: 1.45;
 }
+.ctx-link {
+  display: block;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: 5px;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.ctx-link:hover {
+  color: var(--lapis);
+}
 .entry .note-body {
   font-family: var(--body);
   font-size: 12.5px;
@@ -844,7 +880,7 @@ button.mark:hover {
   flex: 0 0 auto;
 }
 .entry .del:hover {
-  color: #b23a3a;
+  color: var(--danger);
   background: var(--page);
 }
 .margin-empty {
@@ -1036,7 +1072,7 @@ button.mark:hover {
   margin-top: 14px;
 }
 .auth-note.bad {
-  color: #b23a3a;
+  color: var(--danger);
 }
 .auth-switch {
   display: block;
@@ -1109,9 +1145,8 @@ button.mark:hover {
   .sheet {
     padding: 34px 20px 44px;
   }
-  .text {
-    font-size: 17.5px;
-  }
+  /* The phone's smaller reading size is the default in readerPrefs now, so
+     it stays adjustable instead of being pinned by this breakpoint. */
   .bar {
     gap: 10px;
     padding: 0 12px;

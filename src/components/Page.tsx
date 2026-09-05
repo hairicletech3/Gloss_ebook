@@ -13,6 +13,8 @@ type Props = {
   range: [number, number];
   /** token key → the highlight covering it, from tokensForHighlights. */
   highlighted: Map<string, HlToken>;
+  /** Highlight just jumped to, lit briefly so it can be found on arrival. */
+  flashId: string | null;
 };
 
 /**
@@ -33,6 +35,7 @@ export function Page({
   turnDir,
   range,
   highlighted,
+  flashId,
 }: Props) {
   const turnClass = turnDir === 'next' ? ' turn-next' : turnDir === 'prev' ? ' turn-prev' : '';
 
@@ -42,7 +45,11 @@ export function Page({
         <p key={pi}>
           {tokens.map((tok) => {
             const hl = highlighted.get(tok.key);
-            const hlClass = hl ? ` hl hl-${hl.color}${hl.note ? ' hl-noted' : ''}` : '';
+            const hlClass = hl
+              ? ` hl hl-${hl.color}${hl.note ? ' hl-noted' : ''}${
+                  hl.id === flashId ? ' hl-flash' : ''
+                }`
+              : '';
 
             /* The note marker hangs off the last token of a highlight that
                has one, so a note is readable on the page itself instead of

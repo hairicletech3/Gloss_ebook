@@ -15,6 +15,13 @@ const FULL = (n: number): Chunk[] => [{ start: 0, end: n, fits: true }];
 export function useScreenChunks(
   paragraphs: string[],
   containerRef: React.RefObject<HTMLElement | null>,
+  /**
+   * Anything that changes how tall the text renders without changing the
+   * container's size — reading size and leading. A ResizeObserver cannot see
+   * these (the sheet stays exactly as big), so without them the page would
+   * keep the old split and the last lines would be clipped away.
+   */
+  typeKey: string | number = '',
 ): Chunk[] {
   const [chunks, setChunks] = useState<Chunk[]>(() => FULL(paragraphs.length));
   const paragraphsRef = useRef(paragraphs);
@@ -104,7 +111,7 @@ export function useScreenChunks(
       ro.disconnect();
       document.body.removeChild(probe);
     };
-  }, [paragraphs]);
+  }, [paragraphs, typeKey]);
 
   return chunks;
 }

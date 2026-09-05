@@ -7,6 +7,8 @@ type Props = {
   highlights: Highlight[];
   open: boolean;
   onJump: (page: number) => void;
+  /** Highlights jump by paragraph, not just page — see jumpToHighlight. */
+  onJumpHighlight: (h: Highlight) => void;
   onDelete: (id: string) => void;
   onDeleteHighlight: (id: string) => void;
   onClose: () => void;
@@ -19,6 +21,7 @@ export function Margin({
   highlights,
   open,
   onJump,
+  onJumpHighlight,
   onDelete,
   onDeleteHighlight,
   onClose,
@@ -108,13 +111,15 @@ export function Margin({
               <div className="txt">
                 <button
                   className={'term hl-term hl-' + h.color}
-                  onClick={() => onJump(h.page)}
-                  title={`Go to page ${h.page + 1}`}
+                  onClick={() => onJumpHighlight(h)}
+                  title={`Go to this passage on page ${h.page + 1}`}
                 >
                   {h.text}
                 </button>
                 {h.note && <div className="note-body">{h.note}</div>}
-                <div className="ctx">p. {h.page + 1}</div>
+                <button className="ctx ctx-link" onClick={() => onJumpHighlight(h)}>
+                  Go to p. {h.page + 1} →
+                </button>
               </div>
               <button
                 className="del"

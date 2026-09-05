@@ -70,7 +70,13 @@ export default function App() {
       resolves correctly once useScreenChunks finishes measuring instead of
       racing it. */
   const [chunkIndex, setChunkIndex] = useState(0);
+  /** Jump target as a paragraph rather than a chunk number: which chunk holds
+      it isn't known until useScreenChunks measures the new page, and that
+      answer changes with the window size. Resolved at render time below. */
+  const [targetPara, setTargetPara] = useState<number | null>(null);
   const [turnDir, setTurnDir] = useState<'next' | 'prev' | null>(null);
+  /** Briefly lit after jumping to it, so the eye can find it on arrival. */
+  const [flashId, setFlashId] = useState<string | null>(null);
 
   const [words, setWords] = useState<Word[]>([]);
   const [glosses, setGlosses] = useState<Map<string, string>>(new Map());
@@ -164,8 +170,19 @@ export default function App() {
      the -1 sentinel here (rather than in an effect racing that measurement)
      means it's always read fresh, however many renders it takes to settle. */
   const chunks = useScreenChunks(parsed?.paragraphs ?? NO_PARAGRAPHS, sheetRef);
+  /* A pending jump wins over chunkIndex until it lands, for the same reason
+     the -1 sentinel does: it re-resolves against freshly measured chunks
+     instead of a number captured before they existed. */
+  const paraChunk =
+    targetPara === null
+      ? -1
+      : chunks.findIndex((c) => targetPara >= c.start && targetPara < c.end);
   const resolvedChunkIndex =
-    chunkIndex < 0 ? chunks.length - 1 : Math.min(chunkIndex, chunks.length - 1);
+    paraChunk >= 0
+      ? paraChunk
+      : chunkIndex < 0
+        ? chunks.length - 1
+        : Math.min(chunkIndex, chunks.length - 1);
   const currentChunk = chunks[Math.max(0, resolvedChunkIndex)] ?? {
     start: 0,
     end: parsed?.paragraphs.length ?? 0,
@@ -270,6 +287,8 @@ export default function App() {
         setBook(full);
         setPage(startPage);
         setChunkIndex(0);
+        setTargetPara(null);
+        setFlashId(null);
         setTurnDir(null);
         setGlosses(new Map());
         setPending(new Set());
@@ -329,6 +348,9 @@ export default function App() {
     (delta: number) => {
       if (!book || delta === 0) return;
       setPhrase(null);
+      // Turning a page ends any pending jump — from here the chunk number is
+      // what's being navigated, not the paragraph we were sent to.
+      setTargetPara(null);
       const dir = delta > 0 ? 'next' : 'prev';
       const targetChunk = resolvedChunkIndex + delta;
       if (targetChunk >= 0 && targetChunk < chunks.length) {
@@ -459,6 +481,23 @@ export default function App() {
     },
     [highlights, toast],
   );
+
+  /** Follows a note in the margin back to the passage it was written against. */
+  const jumpToHighlight = useCallback((h: Highlight) => {
+    setPage(h.page);
+    setTargetPara(h.para_index);
+    setChunkIndex(0);
+    setFlashId(h.id);
+    setEditing(null);
+    setPhrase(null);
+    if (window.innerWidth <= 680) setMarginOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (!flashId) return;
+    const t = window.setTimeout(() => setFlashId(null), 1400);
+    return () => window.clearTimeout(t);
+  }, [flashId]);
 
   const removeHighlight = useCallback(
     async (id: string) => {
@@ -790,6 +829,7 @@ export default function App() {
                 turnDir={turnDir}
                 range={[currentChunk.start, currentChunk.end]}
                 highlighted={highlightedTokens}
+                flashId={flashId}
               />
             ) : (
               <Shelf
@@ -818,9 +858,11 @@ export default function App() {
           words={bookWords}
           highlights={highlights}
           open={marginOpen}
+          onJumpHighlight={jumpToHighlight}
           onJump={(p) => {
             setPage(p);
             setChunkIndex(0);
+            setTargetPara(null);
             // On a phone the margin covers the page, so jumping has to
             // dismiss it. On a wider screen it sits beside the text — closing
             // it there would just take the list away mid-use.
