@@ -6,6 +6,10 @@ dist/
 .env
 .env.*
 !.env.example
+# Holds only the VITE_ pair, which Vite compiles into the public bundle
+# anyway. Committing it is what lets a deploy build on any host with no
+# dashboard step. Secrets stay in .env.local, still ignored above.
+!.env.production
 .DS_Store
 npm-debug.log*
 .supabase/
